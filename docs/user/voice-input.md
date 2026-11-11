@@ -140,6 +140,38 @@ word or phrase you say to flag a correction, such as "scratch that". Cleanup
 applies the correction only where the context shows one and drops the cue, and
 the model hears the cue as a dictionary hint.
 
+## Talk to a thread
+
+Voice chat is a live spoken conversation about one thread, on web and desktop. Open a
+thread and choose **Start voice chat** beside the microphone. Say what you want done:
+your request is sent to the thread's agent as a normal message, and when the agent
+finishes you hear a short summary while the full output stays in the thread. You can
+keep talking while the agent works to steer it, or ask it to stop. Messages you type
+during the call still go to the agent, and you hear their results too.
+
+Voice chat runs on your ChatGPT account. The machine running the thread needs Codex
+signed in with ChatGPT; T3 Code uses that sign-in and counts the call against your
+ChatGPT plan's voice allowance, not API billing. If the sign-in has expired, open Codex
+once to refresh it. Choose the voice under **Settings → Voice → Voice chat**. While the
+call is open, your microphone audio and what the agent writes in that thread go to
+OpenAI. Audio travels from this device straight to OpenAI. This uses the same
+undocumented route as Codex's own voice mode, so it can stop working if OpenAI changes it.
+While a call is open, a floating panel shows what was heard, what was said back, your
+goals, and the agent's subagents and steps. Goals are a short list of what you are after,
+summarized as you talk and ticked off when the agent finishes; a few seconds after each
+request or result, a small model rewrites the list. That model is the one used for voice
+cleanup and thread titles, and it reads your request and the agent's last message. Drag the
+panel by its top edge, or use **Pop out** to float it over other apps. Mute the
+microphone from the panel or with `Alt+M` (`Option+M` on Mac), which you can change under
+**Settings → Keybindings**. Requests sent by voice appear folded in the thread; open one to
+read it.
+
+You can also ask to end the call ("hang up", "end this chat"). The agent in the thread
+hangs up for you with a T3 tool, after any goodbye finishes, so it needs an agent that can
+use T3 tools. It ends only the call: the agent keeps working. Or choose **End voice chat** to hang up. That only ends the call: the agent keeps working, and
+you can stop it from the thread as usual. A window holds one call at a time, and the call
+stays with its thread if you open another one.
+
 ## Test and troubleshoot
 
 In **Settings → Voice**, **Test microphone** beside the microphone selector

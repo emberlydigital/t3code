@@ -28,6 +28,7 @@ import {
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  AudioLinesIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   DownloadIcon,
@@ -272,6 +273,8 @@ function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "messag
     />
   ) : resolveUserMessagePresentation(row.message).attribution === "automation" ? (
     <AutomationMessageRow row={row} />
+  ) : row.message.context?.source === "voice" ? (
+    <VoiceMessageRow row={row} />
   ) : (
     <UserTimelineRow row={row} />
   );
@@ -360,6 +363,76 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
                   variant="ghost"
                 />
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** What voice chat sent the agent is already said aloud, so it stays folded until asked for. */
+function VoiceMessageRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const [expanded, setExpanded] = useState(false);
+  const revealRef = findRevealRef(() => setExpanded(true));
+  const text = row.message.text;
+  // Find reads the DOM, so a folded message stays mounted but hidden while find is open.
+  const bodyMounted = expanded || ctx.findActive;
+
+  return (
+    <div className="group flex flex-col items-end gap-1" data-user-message-attribution="voice">
+      {row.message.inputIntent === "steer" ||
+      row.message.inputIntent === "promoted_queued_to_steer" ? (
+        <UserMessageIntentMarker
+          intent={row.message.inputIntent}
+          unread={row.projectedItem?.item.status === "pending"}
+        />
+      ) : null}
+      <div
+        className={cn(
+          "min-w-0 max-w-[80%] rounded-2xl bg-message text-message-foreground",
+          BUBBLE_CHIP_CLASS_NAME,
+          expanded && "w-full",
+        )}
+      >
+        <MessageAuthorHeading>You, by voice</MessageAuthorHeading>
+        <FoldedMessageHeader
+          icon={AudioLinesIcon}
+          label="Voice"
+          summary={text.trim().split(/\r?\n/, 1)[0] ?? ""}
+          expanded={expanded}
+          onToggle={() => setExpanded((value) => !value)}
+        />
+        {bodyMounted ? (
+          // `beforematch` does not bubble, so the reveal listener sits on the hidden fold itself.
+          <div
+            ref={revealRef}
+            hidden={!expanded}
+            className="px-3 pb-3"
+            data-thread-find-text="true"
+          >
+            <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
+          </div>
+        ) : null}
+      </div>
+      <UserMessageProjectedStatus row={row} />
+      {expanded ? (
+        <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+          <div className="flex shrink-0 items-center gap-2">
+            <TimelineRowTimestamp
+              createdAt={row.message.createdAt}
+              timestampFormat={ctx.timestampFormat}
+              alwaysVisible
+            />
+            <div className="flex items-center gap-0.5">
+              {typeof row.revertTurnCount === "number" && (
+                <RevertUserMessageButton
+                  turnCount={row.revertTurnCount}
+                  messageId={row.message.id}
+                />
+              )}
+              <MessageCopyButton text={text} variant="ghost" />
             </div>
           </div>
         </div>

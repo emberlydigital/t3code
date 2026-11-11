@@ -58,6 +58,7 @@ import { readProject } from "../state/entities";
 
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+import { VoiceChatPanel } from "../components/voice/VoiceChatPanel";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -188,6 +189,7 @@ function RootRouteBranch() {
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />
       <ConfirmDialogHost />
+      <VoiceChatPanel />
       <CustomSnoozeDialogHost />
       <GuestShareDialogHost />
       <ProjectCloneToastCoordinator />

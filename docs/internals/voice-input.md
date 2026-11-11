@@ -53,6 +53,44 @@ applies the account's safety-retention policy when choosing an endpoint. The cat
 holds no credential or consent state, which is why it may be cached while key
 presence is read fresh on every request.
 
+## Voice chat
+
+Voice chat is a WebRTC call between the client and OpenAI's voice model, placed through
+the undocumented ChatGPT route Codex's voice mode uses. The environment only answers the
+client's SDP offer: it reads Codex's ChatGPT sign-in from `CODEX_HOME` (never writing or
+refreshing it) and adds the [session](../../packages/shared/src/realtimeVoice.ts), so the
+credential and the model-facing text stay server-owned while audio never crosses the T3
+connection. That keeps remote and relay links free of audio and makes latency
+independent of them. The route has no tools: the model delegates on its own, and it only
+does so reliably with Codex's model name and its "backend" wording in the instructions.
+The thread's opening state rides in the instructions too; sent as a message once the call
+opens, it draws an unprompted reply.
+
+Goals are summarized by the environment's text model through [the goals
+service](../../apps/server/src/speech/goals.ts). It borrows the voice cleanup operation,
+since a new provider operation would touch every provider driver, and a reply it cannot
+parse falls back to a plain list in
+[shared code](../../packages/shared/src/voiceGoals.ts) rather than failing. The client
+sends one update at a time, in order, so a slow summary cannot overwrite a newer one.
+
+An agent hangs up the call with `t3_voice_call_end`. The call lives in the client, so the
+client keeps one question open to [the call control service](../../apps/server/src/speech/callControl.ts)
+(a 25 second long poll, asked again until the call ends) and the tool answers it. A hang-up
+that lands between two questions is held for a few seconds, and one with nobody listening reports
+`hungUp: false` rather than waiting for a later call. A long poll avoids a new push channel
+and its client permission surface; the tool's text is part of every agent's context, so
+`agentContextBudget.json` grew by its size.
+
+The call's control channel ends in the client, not on the server. The
+[conversation](../../packages/client-runtime/src/voice-input/realtimeVoice.ts) turns the
+model's delegations into the same thread commands the composer sends and feeds the
+thread's messages back to the delegation they answer (progress quietly, the final result
+spoken), so the server needs no call state, no socket to OpenAI,
+and nothing to clean up when a client disappears. The call cannot outlive the client
+anyway, because the client holds the microphone. A delegated request returns to the
+model only when the thread is idle _and_ has shown the message that carried it; an idle
+thread alone may simply not have received the message yet.
+
 ## Server side
 
 The [speech service](../../apps/server/src/speech/SpeechService.ts) runs

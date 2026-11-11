@@ -7,6 +7,10 @@ import type {
   CloudSpeechModelId,
   CloudSpeechProvider,
   SettingsSecretValue,
+  RealtimeVoiceName,
+  ThreadId,
+  VoiceGoal,
+  VoiceGoalUpdate,
   SpeechAcceleration,
   SpeechModelUnloadTimeout,
   SpeechTranscriptionOptions,
@@ -103,6 +107,30 @@ export const requireCloudSpeechKey = (
               message: new CloudSpeechError({ provider, reason: "missing-key" }).message,
             }),
           ),
+    ),
+  );
+
+/** Exchanges a WebRTC offer for the answer of a live voice call the environment starts. */
+export const startRealtimeVoiceCall = (
+  prepared: PreparedConnection,
+  sdp: string,
+  voice: RealtimeVoiceName,
+  context: string,
+) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    path: (urls) => urls.realtimeCall(),
+    run: ({ client, headers }) =>
+      client.realtimeCall({ headers, payload: { sdp, voice, context } }),
+  }).pipe(
+    Effect.map((answer) => answer.sdp),
+    // The environment's reason (a missing or rejected key) is what the user can act on.
+    Effect.mapError((error) =>
+      error._tag === "RemoteEnvironmentAuthFetchError" && isCloudSpeechError(error.cause)
+        ? error.cause
+        : error,
     ),
   );
 
@@ -265,6 +293,35 @@ export const postProcessEnvironmentTranscript = (
     timeoutMs: INFERENCE_OR_DOWNLOAD_TIMEOUT_MS,
     run: ({ client, headers }) =>
       client.postProcess({ headers, payload: { transcript, draft, options } }),
+  });
+
+/**
+ * Asks the environment whether an agent has asked to hang up this thread's call. The answer
+ * arrives when one does, or after about 25 seconds with false, so callers ask again.
+ */
+export const waitForVoiceCallHangUp = (prepared: PreparedConnection, threadId: ThreadId) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "GET",
+    path: (urls) => urls.voiceCallHangUp({ query: { threadId } }),
+    timeoutMs: 40_000,
+    run: ({ client, headers }) => client.voiceCallHangUp({ headers, query: { threadId } }),
+  }).pipe(Effect.map((answer) => answer.hangUp));
+
+/** Asks the environment's text model to update a call's goal list for one event. */
+export const updateVoiceGoals = (
+  prepared: PreparedConnection,
+  goals: ReadonlyArray<VoiceGoal>,
+  update: VoiceGoalUpdate,
+) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    path: (urls) => urls.voiceGoals(),
+    timeoutMs: 90_000,
+    run: ({ client, headers }) => client.voiceGoals({ headers, payload: { goals, update } }),
   });
 
 export const updateEnvironmentSpeechAcceleration = (
