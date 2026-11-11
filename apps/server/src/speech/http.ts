@@ -4,6 +4,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   type AuthEnvironmentScope,
+  DEFAULT_REALTIME_VOICE,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
   type EnvironmentSpeechModels,
@@ -124,6 +125,20 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
               }),
             );
           return { text };
+        }),
+      )
+      .handle(
+        "realtimeCall",
+        Effect.fn("environment.voice.realtimeCall")(function* (args) {
+          yield* guard(args.endpoint.name);
+          const sdp = yield* cloud
+            .realtimeCall(args.payload.sdp, args.payload.voice ?? DEFAULT_REALTIME_VOICE)
+            .pipe(
+              Effect.catchTags({
+                ServerSettingsError: (error) => failEnvironmentInternal("internal_error", error),
+              }),
+            );
+          return { sdp };
         }),
       )
       .handle(

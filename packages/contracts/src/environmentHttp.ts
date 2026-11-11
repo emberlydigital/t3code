@@ -64,6 +64,8 @@ import {
   EnvironmentSpeechPostProcessingResult,
   EnvironmentSpeechStatus,
   EnvironmentSpeechTranscriptionResult,
+  RealtimeVoiceCallRequest,
+  RealtimeVoiceSdp,
 } from "./speech.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
@@ -834,6 +836,15 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     })
       .middleware(EnvironmentVoiceBodyLimit)
       .middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    // Carries the offer and the answer only; the key and the session stay on the server.
+    HttpApiEndpoint.post("realtimeCall", "/api/voice/realtime/call", {
+      headers: OptionalBearerHeaders,
+      payload: RealtimeVoiceCallRequest,
+      success: RealtimeVoiceSdp,
+      error: [...EnvironmentScopedOperationErrors, CloudSpeechError],
+    }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
     HttpApiEndpoint.get("status", "/api/voice/status", {

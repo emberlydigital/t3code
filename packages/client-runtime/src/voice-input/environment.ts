@@ -7,6 +7,7 @@ import type {
   CloudSpeechModelId,
   CloudSpeechProvider,
   SettingsSecretValue,
+  RealtimeVoiceName,
   SpeechAcceleration,
   SpeechModelUnloadTimeout,
   SpeechTranscriptionOptions,
@@ -103,6 +104,28 @@ export const requireCloudSpeechKey = (
               message: new CloudSpeechError({ provider, reason: "missing-key" }).message,
             }),
           ),
+    ),
+  );
+
+/** Exchanges a WebRTC offer for the answer of a live voice call the environment starts. */
+export const startRealtimeVoiceCall = (
+  prepared: PreparedConnection,
+  sdp: string,
+  voice: RealtimeVoiceName,
+) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    path: (urls) => urls.realtimeCall(),
+    run: ({ client, headers }) => client.realtimeCall({ headers, payload: { sdp, voice } }),
+  }).pipe(
+    Effect.map((answer) => answer.sdp),
+    // The environment's reason (a missing or rejected key) is what the user can act on.
+    Effect.mapError((error) =>
+      error._tag === "RemoteEnvironmentAuthFetchError" && isCloudSpeechError(error.cause)
+        ? error.cause
+        : error,
     ),
   );
 

@@ -53,6 +53,24 @@ applies the account's safety-retention policy when choosing an endpoint. The cat
 holds no credential or consent state, which is why it may be cached while key
 presence is read fresh on every request.
 
+## Voice chat
+
+Voice chat is a WebRTC call between the client and OpenAI's realtime model. The
+environment only answers the client's SDP offer: it adds the saved OpenAI key and the
+[session](../../packages/shared/src/realtimeVoice.ts) (instructions and tools), so the
+key and the model-facing text stay server-owned while audio never crosses the T3
+connection. That keeps remote and relay links free of audio and makes latency
+independent of them.
+
+The call's control channel ends in the client, not on the server. The
+[conversation](../../packages/client-runtime/src/voice-input/realtimeVoice.ts) turns the
+model's tool calls into the same thread commands the composer sends and feeds the
+thread's messages back as text, so the server needs no call state, no socket to OpenAI,
+and nothing to clean up when a client disappears. The call cannot outlive the client
+anyway, because the client holds the microphone. A delegated request returns to the
+model only when the thread is idle _and_ has shown the message that carried it; an idle
+thread alone may simply not have received the message yet.
+
 ## Server side
 
 The [speech service](../../apps/server/src/speech/SpeechService.ts) runs

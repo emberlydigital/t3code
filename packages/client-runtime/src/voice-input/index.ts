@@ -18,6 +18,7 @@ export {
   getCloudSpeechModels,
   requireCloudSpeechKey,
   setCloudSpeechKey,
+  startRealtimeVoiceCall,
   transcribeCloudPcm,
   getEnvironmentSpeechStatus,
   getEnvironmentSpeechStreamUrl,
@@ -29,6 +30,13 @@ export {
   updateEnvironmentSpeechAcceleration,
   updateEnvironmentSpeechModelUnloadTimeout,
 } from "./environment.ts";
+export {
+  RealtimeVoiceConversation,
+  type RealtimeVoiceActivity,
+  type RealtimeVoiceCaption,
+  type RealtimeVoiceRequest,
+  type RealtimeVoiceThreadSnapshot,
+} from "./realtimeVoice.ts";
 export { openSpeechStream } from "./stream.ts";
 export {
   VoiceTranscriptionError,

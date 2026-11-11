@@ -140,6 +140,31 @@ word or phrase you say to flag a correction, such as "scratch that". Cleanup
 applies the correction only where the context shows one and drops the cue, and
 the model hears the cue as a dictionary hint.
 
+## Talk to a thread
+
+Voice chat is a live spoken conversation about one thread, on web and desktop. Open a
+thread and choose **Start voice chat** beside the microphone. Say what you want done:
+your request is sent to the thread's agent as a normal message, and when the agent
+finishes you hear a short summary while the full output stays in the thread. You can
+keep talking while the agent works to steer it, or ask it to stop. Messages you type
+during the call still go to the agent, and you hear their results too.
+
+Voice chat needs an OpenAI API key saved on the thread's environment, and OpenAI bills
+that key for the call. If none is saved, starting a call asks for one. Add, replace, or remove it under
+**Settings → Voice → Voice chat**, where you can also choose the voice. Saving it does
+not change how dictation transcribes. While the call is open,
+your microphone audio and what the agent writes in that thread go to OpenAI. Audio
+travels from this device straight to OpenAI; the key never leaves the environment.
+While a call is open, a floating panel shows what was heard, what was said back, what you
+asked for by voice, and the agent's subagents and steps. Drag it by its top edge. Mute the
+microphone from the panel or with `Alt+M` (`Option+M` on Mac), which you can change under
+**Settings → Keybindings**. Requests sent by voice appear folded in the thread; open one to
+read it.
+
+Choose **End voice chat** to hang up. That only ends the call: the agent keeps working, and
+you can stop it from the thread as usual. A window holds one call at a time, and the call
+stays with its thread if you open another one.
+
 ## Test and troubleshoot
 
 In **Settings → Voice**, **Test microphone** beside the microphone selector

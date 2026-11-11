@@ -52,6 +52,7 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
       "rate-limit",
       "model-unavailable",
       "unavailable",
+      "voice-chat-unavailable",
     ]),
   },
   { httpApiStatus: 422 },
@@ -73,6 +74,8 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
         return `The chosen model isn’t available on ${name}. Choose another model in Settings → Voice.`;
       case "unavailable":
         return `${name} couldn’t transcribe this recording. Try again later.`;
+      case "voice-chat-unavailable":
+        return `${name} couldn’t start the voice chat. Try again later.`;
     }
   }
 }
@@ -264,6 +267,35 @@ export const EnvironmentSpeechStatus = Schema.Union([
 export type EnvironmentSpeechStatus = typeof EnvironmentSpeechStatus.Type;
 
 export const EnvironmentSpeechTranscriptionResult = Schema.Struct({ text: Schema.String });
+
+const RealtimeVoiceSdpText = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(64 * 1024),
+);
+/** A WebRTC session description. The audio itself flows between the client and OpenAI. */
+export const RealtimeVoiceSdp = Schema.Struct({ sdp: RealtimeVoiceSdpText });
+
+/** The voices OpenAI's realtime model speaks with. */
+export const RealtimeVoiceName = Schema.Literals([
+  "marin",
+  "cedar",
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "sage",
+  "shimmer",
+  "verse",
+]);
+export type RealtimeVoiceName = typeof RealtimeVoiceName.Type;
+export const DEFAULT_REALTIME_VOICE: RealtimeVoiceName = "marin";
+
+export const RealtimeVoiceCallRequest = Schema.Struct({
+  sdp: RealtimeVoiceSdpText,
+  /** Older clients omit it and get the default voice. */
+  voice: Schema.optionalKey(RealtimeVoiceName),
+});
 
 export const EnvironmentSpeechAccelerationRequest = Schema.Struct({
   acceleration: SpeechAcceleration,

@@ -9,10 +9,12 @@ import {
   type ServerSettingsError,
   type CloudSpeechKeys,
   type CloudSpeechProvider,
+  type RealtimeVoiceName,
   EnvironmentSpeechTranscriptionResult,
   type SpeechTranscriptionOptions,
 } from "@t3tools/contracts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import { REALTIME_VOICE_CALLS_URL, realtimeVoiceSessionJson } from "@t3tools/shared/realtimeVoice";
 import { cloudSpeechLanguages, effectiveSpeechLanguage } from "@t3tools/shared/speech";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -117,6 +119,11 @@ export class CloudSpeech extends Context.Service<
       options: SpeechTranscriptionOptions,
       model?: string | undefined,
     ) => Effect.Effect<string, CloudSpeechError | SpeechInvalidAudioError | ServerSettingsError>;
+    /** Answers a WebRTC offer with a live OpenAI voice call. The audio never passes through here. */
+    readonly realtimeCall: (
+      sdp: string,
+      voice: RealtimeVoiceName,
+    ) => Effect.Effect<string, CloudSpeechError | ServerSettingsError>;
   }
 >()("t3/speech/CloudSpeech") {}
 
@@ -178,6 +185,60 @@ export const layer = Layer.effect(
         },
       });
     });
+    const readKey = Effect.fnUntraced(function* (
+      provider: CloudSpeechProvider,
+      source: SettingsSecretValue,
+    ) {
+      // A vault that locked since the last use must not authorize a new upload.
+      if (isSecretReference(source)) yield* resolver.invalidate([source]);
+      const unreadable = () => new CloudSpeechError({ provider, reason: "unreadable-key" });
+      const key = yield* requireSettingsSecret(resolver, source).pipe(Effect.mapError(unreadable));
+      if (!isApiKey(key)) return yield* unreadable();
+      return Redacted.make(key);
+    });
+    const upstreamFailure = (provider: CloudSpeechProvider, status: number) =>
+      status === 429
+        ? "rate-limit"
+        : [401, 402, 403].includes(status)
+          ? "rejected-key"
+          : status === 404 && provider === "openrouter"
+            ? "model-unavailable"
+            : null;
+    const realtimeCall = Effect.fn("CloudSpeech.realtimeCall")(
+      function* (sdp: string, voice: RealtimeVoiceName) {
+        const provider = "openai";
+        const source = (yield* credentials)[provider];
+        if (!source) return yield* new CloudSpeechError({ provider, reason: "missing-key" });
+        const key = yield* readKey(provider, source);
+        const form = new FormData();
+        form.set("sdp", sdp);
+        form.set("session", realtimeVoiceSessionJson(voice));
+        const unavailable = () =>
+          new CloudSpeechError({ provider, reason: "voice-chat-unavailable" });
+        const response = yield* execute(
+          HttpClientRequest.post(REALTIME_VOICE_CALLS_URL).pipe(
+            HttpClientRequest.bearerToken(key),
+            HttpClientRequest.bodyFormData(form),
+          ),
+        ).pipe(Effect.mapError(unavailable));
+        if (response.status < 200 || response.status >= 300)
+          return yield* new CloudSpeechError({
+            provider,
+            reason: upstreamFailure(provider, response.status) ?? "voice-chat-unavailable",
+          });
+        return yield* response.text.pipe(Effect.mapError(unavailable));
+      },
+      (effect) =>
+        effect.pipe(
+          Effect.timeoutOrElse({
+            duration: "30 seconds",
+            orElse: () =>
+              Effect.fail(
+                new CloudSpeechError({ provider: "openai", reason: "voice-chat-unavailable" }),
+              ),
+          }),
+        ),
+    );
     const transcribe = Effect.fn("CloudSpeech.transcribe")(
       function* (
         provider: CloudSpeechProvider,
@@ -200,16 +261,10 @@ export const layer = Layer.effect(
         const language = effectiveSpeechLanguage(cloudSpeechLanguages, options.speechLanguage);
         if (provider === "openrouter" && !(yield* models).some((entry) => entry.id === model))
           return yield* new CloudSpeechError({ provider, reason: "model-unavailable" });
-        // A vault that locked since the last recording must not authorize a new upload.
-        if (isSecretReference(source)) yield* resolver.invalidate([source]);
-        const unreadable = () => new CloudSpeechError({ provider, reason: "unreadable-key" });
-        const key = yield* requireSettingsSecret(resolver, source).pipe(
-          Effect.mapError(unreadable),
-        );
-        if (!isApiKey(key)) return yield* unreadable();
+        const key = yield* readKey(provider, source);
         const audio = wave(samples);
         const request = HttpClientRequest.post(endpoints[provider].url).pipe(
-          HttpClientRequest.bearerToken(Redacted.make(key)),
+          HttpClientRequest.bearerToken(key),
           provider === "openrouter"
             ? openRouterBody(model!, audio, language)
             : audioBody(provider, audio, language, options),
@@ -226,14 +281,7 @@ export const layer = Layer.effect(
         if (response.status < 200 || response.status >= 300)
           return yield* new CloudSpeechError({
             provider,
-            reason:
-              response.status === 429
-                ? "rate-limit"
-                : [401, 402, 403].includes(response.status)
-                  ? "rejected-key"
-                  : response.status === 404 && provider === "openrouter"
-                    ? "model-unavailable"
-                    : "unavailable",
+            reason: upstreamFailure(provider, response.status) ?? "unavailable",
           });
         const { text } = yield* HttpClientResponse.schemaBodyJson(
           EnvironmentSpeechTranscriptionResult,
@@ -253,6 +301,6 @@ export const layer = Layer.effect(
           }),
         ),
     );
-    return CloudSpeech.of({ configured, models, setKey, transcribe });
+    return CloudSpeech.of({ configured, models, setKey, transcribe, realtimeCall });
   }),
 );

@@ -54,6 +54,8 @@ import {
 import { PullRequestMergeMethod } from "./pullRequest.ts";
 import {
   CloudSpeechModelId,
+  DEFAULT_REALTIME_VOICE,
+  RealtimeVoiceName,
   SpeechAcceleration,
   SpeechCorrectionCue,
   SpeechCustomWords,
@@ -543,6 +545,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   // Device-local input device id. An empty string follows the operating system default.
   voiceMicrophone: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  voiceChatVoice: RealtimeVoiceName.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_REALTIME_VOICE)),
+  ),
   voiceShortcutMode: VoiceShortcutMode.pipe(Schema.withDecodingDefault(Effect.succeed("auto"))),
   speechLanguage: SpeechLanguage.pipe(Schema.withDecodingDefault(Effect.succeed("auto"))),
   speechTranslateToEnglish: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -2040,6 +2045,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   voiceMicrophone: Schema.optionalKey(Schema.String),
+  voiceChatVoice: Schema.optionalKey(RealtimeVoiceName),
   voiceShortcutMode: Schema.optionalKey(VoiceShortcutMode),
   speechLanguage: Schema.optionalKey(SpeechLanguage),
   speechTranslateToEnglish: Schema.optionalKey(Schema.Boolean),

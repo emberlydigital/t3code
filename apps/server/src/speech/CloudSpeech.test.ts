@@ -198,3 +198,43 @@ it.effect("removing a key while a catalog read is pending prevents the upload", 
     expect(exit._tag).toBe("Failure");
   }),
 );
+
+it.effect("answers a voice call offer with the saved OpenAI key and the server's own session", () =>
+  Effect.gen(function* () {
+    const upstream = vi.fn<typeof fetch>(async () => new Response("answer-sdp", { status: 201 }));
+    const service = yield* CloudSpeech.CloudSpeech.pipe(
+      Effect.provide(
+        CloudSpeech.layer.pipe(
+          Layer.provide(FetchHttpClient.layer),
+          Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+          Layer.provide(Layer.mock(SecretResolver.SecretResolver)({})),
+        ),
+      ),
+    );
+    const call = () =>
+      service
+        .realtimeCall("offer-sdp", "cedar")
+        .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+    yield* service.setKey("xai", Redacted.make("other"));
+    expect(yield* Effect.flip(call())).toMatchObject({ provider: "openai", reason: "missing-key" });
+    expect(upstream).not.toHaveBeenCalled();
+    yield* service.setKey("openai", Redacted.make("chosen"));
+    expect(yield* call()).toBe("answer-sdp");
+    const [url, init] = upstream.mock.calls[0]!;
+    expect(String(url)).toBe("https://api.openai.com/v1/realtime/calls");
+    expect(init?.redirect).toBe("error");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer chosen");
+    const form = init?.body as FormData;
+    expect(form.get("sdp")).toBe("offer-sdp");
+    const session = JSON.parse(String(form.get("session"))) as {
+      tools: ReadonlyArray<{ name: string }>;
+      audio: { output: { voice: string } };
+    };
+    expect(session.audio.output.voice).toBe("cedar");
+    expect(session.tools.map((tool) => tool.name)).toContain("background_agent");
+    upstream.mockResolvedValueOnce(new Response("sensitive upstream diagnostic", { status: 401 }));
+    expect(yield* Effect.flip(call())).toMatchObject({ reason: "rejected-key" });
+    upstream.mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(yield* Effect.flip(call())).toMatchObject({ reason: "voice-chat-unavailable" });
+  }),
+);
