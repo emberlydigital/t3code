@@ -840,6 +840,7 @@ export const layer: Layer.Layer<
       const userText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
+        spoken: message.context?.source === "voice",
       });
       // Native goal commands go verbatim; handoff history waits a turn.
       const goalDriver =

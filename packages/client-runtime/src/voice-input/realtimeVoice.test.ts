@@ -86,6 +86,28 @@ describe("RealtimeVoiceConversation", () => {
     expect(view.requests).toEqual(["add a toggle: done"]);
   });
 
+  it("sends everything said since the last request when the route hands over only the last piece", () => {
+    const { conversation, dispatch, delegate } = setup();
+    const said = (id: string, role: "user" | "assistant", transcript: string) => {
+      conversation.handleEvent({ type: "turn.created", turn: { id, role, transcript: "" } });
+      conversation.handleEvent({ type: "turn.done", turn: { id, role, transcript } });
+    };
+    said("u1", "user", "Tell the other thread to deploy");
+    said("a1", "assistant", "Which one?");
+    said("u2", "user", ", go ahead");
+    delegate("item-1", ", go ahead");
+    expect(dispatch).toHaveBeenLastCalledWith(
+      "sent-1",
+      "Tell the other thread to deploy, go ahead",
+      false,
+    );
+
+    // The next request starts fresh, and text the model wrote itself goes as it is.
+    said("u3", "user", "um can you fix the uh login bug");
+    delegate("item-2", "Fix the login bug.");
+    expect(dispatch).toHaveBeenLastCalledWith("sent-2", "Fix the login bug.", true);
+  });
+
   it("steers a working agent and tells the voice model quietly", async () => {
     const { dispatch, delegate, sent } = setup(thread(true));
     delegate("item-2", "use blue instead");

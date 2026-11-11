@@ -377,6 +377,7 @@ export const layer: Layer.Layer<
                 text: projectComposerContextForProvider({
                   text: message.text,
                   records: message.context?.records ?? [],
+                  spoken: message.context?.source === "voice",
                 }),
                 attachments: message.attachments,
                 createdBy: message.createdBy,

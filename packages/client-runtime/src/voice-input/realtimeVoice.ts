@@ -62,6 +62,14 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 /** The text parts of a delegation item, which carry the user's request. */
+const SAID_KEPT = 6;
+
+const comparable = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
 function delegationText(item: Record<string, unknown>) {
   const content = item.content;
   if (!Array.isArray(content)) return "";
@@ -96,6 +104,8 @@ export class RealtimeVoiceConversation {
   #requests: ReadonlyArray<RealtimeVoiceRequest> = [];
   readonly #captions = { user: "", assistant: "" };
   readonly #turnRoles = new Map<string, "user" | "assistant">();
+  /** What the user said since the last request, one entry per finished turn. */
+  #said: ReadonlyArray<string> = [];
 
   constructor(deps: RealtimeVoiceConversationDependencies, thread: RealtimeVoiceThreadSnapshot) {
     this.#deps = deps;
@@ -142,7 +152,7 @@ export class RealtimeVoiceConversation {
         const item = record(value.item);
         if (item === null || typeof item.id !== "string") return;
         if (item.target !== undefined && item.target !== "client") return;
-        this.#delegate(item.id, delegationText(item));
+        this.#delegate(item.id, this.#wholeRequest(delegationText(item)));
         return;
       }
       case "turn.created": {
@@ -171,6 +181,7 @@ export class RealtimeVoiceConversation {
         const text = typeof turn?.transcript === "string" ? turn.transcript.trim() : "";
         if (typeof turn?.id === "string") this.#turnRoles.delete(turn.id);
         if (text) this.#deps.onCaption?.({ role, text, live: false });
+        if (text && role === "user") this.#said = [...this.#said, text].slice(-SAID_KEPT);
         this.#deps.onActivity?.("idle");
         return;
       }
@@ -180,6 +191,24 @@ export class RealtimeVoiceConversation {
         return;
       }
     }
+  }
+
+  /**
+   * The route hands over the transcript of the user's last turn, so a request split by a pause
+   * arrives as its last piece ("…, go ahead"). Everything said since the previous request goes
+   * instead. Text the model wrote itself is not in the transcript and goes as it is.
+   */
+  #wholeRequest(delegated: string) {
+    const speaking = [...this.#turnRoles.values()].includes("user")
+      ? this.#captions.user.trim()
+      : "";
+    const said = [...this.#said, speaking]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+([,.!?])/g, "$1");
+    this.#said = [];
+    if (!delegated) return said;
+    return comparable(said).includes(comparable(delegated)) ? said : delegated;
   }
 
   #delegate(itemId: string, prompt: string) {
