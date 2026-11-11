@@ -113,6 +113,7 @@ import {
   ComposerDictationStatus,
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
+import { VoiceChatComposerAction } from "../voice-chat/VoiceChatComposerAction";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import type { ExistingThreadSettingsRouteParams } from "./ThreadSettingsSheet";
@@ -1093,6 +1094,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 }
               >
                 {modelControl}
+                <VoiceChatComposerAction
+                  size={usesLargeControls ? "large" : "regular"}
+                  environmentId={props.environmentId}
+                  threadId={props.selectedThread.id}
+                />
                 <ComposerDictationStartAction
                   size={usesLargeControls ? "large" : "regular"}
                   state={voiceInput.state}

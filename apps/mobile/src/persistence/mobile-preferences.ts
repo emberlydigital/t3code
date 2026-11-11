@@ -7,11 +7,13 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
   EnvironmentId,
+  isRealtimeVoiceName,
   PullRequestInvolvement,
   PullRequestListFilters,
   PullRequestListState,
   type ProviderInstanceId,
   type PullRequestMergeMethod,
+  type RealtimeVoiceName,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import { ToolCallVisibility } from "@t3tools/contracts/settings";
@@ -114,6 +116,9 @@ export interface Preferences {
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   readonly followUpBehavior?: FollowUpBehavior;
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
+  readonly voiceChatVoice?: RealtimeVoiceName;
+  /** The user has been told where a voice call's audio goes. */
+  readonly voiceChatDisclosed?: boolean;
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly toolCallVisibility?: ToolCallVisibility;
@@ -198,6 +203,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
+    voiceChatVoice?: RealtimeVoiceName;
+    voiceChatDisclosed?: boolean;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     toolCallVisibility?: ToolCallVisibility;
@@ -313,6 +320,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
         ? [{ kind: entry.kind, uid: entry.uid, name: entry.name }]
         : [];
     });
+  }
+  if (isRealtimeVoiceName(parsed.voiceChatVoice)) {
+    preferences.voiceChatVoice = parsed.voiceChatVoice;
+  }
+  if (typeof parsed.voiceChatDisclosed === "boolean") {
+    preferences.voiceChatDisclosed = parsed.voiceChatDisclosed;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;

@@ -91,6 +91,11 @@ anyway, because the client holds the microphone. A delegated request returns to 
 model only when the thread is idle _and_ has shown the message that carried it; an idle
 thread alone may simply not have received the message yet.
 
+The [call](../../packages/client-runtime/src/voice-input/realtimeVoiceCall.ts) owns the
+lifecycle, goals, mute and hang-up, so web and mobile differ only in the WebRTC transport
+they plug in. Mobile's comes from `react-native-webrtc`, a native module: a JavaScript update
+can reach a binary built without it, so the app hides voice chat when the module is absent.
+
 ## Server side
 
 The [speech service](../../apps/server/src/speech/SpeechService.ts) runs

@@ -389,6 +389,8 @@ const config: ExpoConfig = {
         enableBackgroundRecording: false,
       },
     ],
+    // Live voice chat. It keeps the permission strings set above.
+    "@config-plugins/react-native-webrtc",
     [
       "expo-camera",
       {
