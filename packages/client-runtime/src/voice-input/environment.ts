@@ -8,6 +8,8 @@ import type {
   CloudSpeechProvider,
   SettingsSecretValue,
   RealtimeVoiceName,
+  VoiceGoal,
+  VoiceGoalUpdate,
   SpeechAcceleration,
   SpeechModelUnloadTimeout,
   SpeechTranscriptionOptions,
@@ -290,6 +292,21 @@ export const postProcessEnvironmentTranscript = (
     timeoutMs: INFERENCE_OR_DOWNLOAD_TIMEOUT_MS,
     run: ({ client, headers }) =>
       client.postProcess({ headers, payload: { transcript, draft, options } }),
+  });
+
+/** Asks the environment's text model to update a call's goal list for one event. */
+export const updateVoiceGoals = (
+  prepared: PreparedConnection,
+  goals: ReadonlyArray<VoiceGoal>,
+  update: VoiceGoalUpdate,
+) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    path: (urls) => urls.voiceGoals(),
+    timeoutMs: 90_000,
+    run: ({ client, headers }) => client.voiceGoals({ headers, payload: { goals, update } }),
   });
 
 export const updateEnvironmentSpeechAcceleration = (

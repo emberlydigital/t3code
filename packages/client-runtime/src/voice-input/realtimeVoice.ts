@@ -33,12 +33,16 @@ export interface RealtimeVoiceRequest {
   readonly id: string;
   readonly prompt: string;
   readonly status: "working" | "done" | "stopped" | "failed";
+  /** The agent's last message when the work finished. */
+  readonly result?: string;
 }
 
 /** Who is talking: the user (`listening`), the voice model (`speaking`), or nobody. */
 export type RealtimeVoiceActivity = "idle" | "listening" | "speaking";
 
 const MAX_REQUESTS = 6;
+/** How much of the agent's last message the goal summary may read. */
+const RESULT_KEPT = 1500;
 
 export interface RealtimeVoiceConversationDependencies {
   /** Writes one event to the call's data channel. */
@@ -219,7 +223,13 @@ export class RealtimeVoiceConversation {
     if (this.#requests.some((request) => request.status === "working"))
       this.#setRequests(
         this.#requests.map((request) =>
-          request.status === "working" ? { ...request, status: "done" } : request,
+          request.status === "working"
+            ? {
+                ...request,
+                status: "done",
+                ...(this.#result === null ? {} : { result: this.#result.slice(0, RESULT_KEPT) }),
+              }
+            : request,
         ),
       );
     if (this.#result !== null) this.#report(this.#result, "speakable");

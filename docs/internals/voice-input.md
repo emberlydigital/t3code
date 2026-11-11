@@ -66,6 +66,13 @@ does so reliably with Codex's model name and its "backend" wording in the instru
 The thread's opening state rides in the instructions too; sent as a message once the call
 opens, it draws an unprompted reply.
 
+Goals are summarized by the environment's text model through [the goals
+service](../../apps/server/src/speech/goals.ts). It borrows the voice cleanup operation,
+since a new provider operation would touch every provider driver, and a reply it cannot
+parse falls back to a plain list in
+[shared code](../../packages/shared/src/voiceGoals.ts) rather than failing. The client
+sends one update at a time, in order, so a slow summary cannot overwrite a newer one.
+
 The call's control channel ends in the client, not on the server. The
 [conversation](../../packages/client-runtime/src/voice-input/realtimeVoice.ts) turns the
 model's delegations into the same thread commands the composer sends and feeds the

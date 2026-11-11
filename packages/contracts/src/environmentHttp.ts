@@ -66,6 +66,8 @@ import {
   EnvironmentSpeechTranscriptionResult,
   RealtimeVoiceCallRequest,
   RealtimeVoiceSdp,
+  VoiceGoalsRequest,
+  VoiceGoalsResult,
 } from "./speech.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
@@ -933,6 +935,15 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     })
       .middleware(EnvironmentVoiceBodyLimit)
       .middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    // Sends the user's spoken requests, and the agent's last message, to the environment's text model.
+    HttpApiEndpoint.post("voiceGoals", "/api/voice/goals", {
+      headers: OptionalBearerHeaders,
+      payload: VoiceGoalsRequest,
+      success: VoiceGoalsResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
     HttpApiEndpoint.post("postProcess", "/api/voice/post-process", {

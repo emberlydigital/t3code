@@ -547,6 +547,10 @@
       "types": "./src/realtimeVoice.ts",
       "import": "./src/realtimeVoice.ts"
     },
+    "./voiceGoals": {
+      "types": "./src/voiceGoals.ts",
+      "import": "./src/voiceGoals.ts"
+    },
     "./voicePanelWindow": {
       "types": "./src/voicePanelWindow.ts",
       "import": "./src/voicePanelWindow.ts"

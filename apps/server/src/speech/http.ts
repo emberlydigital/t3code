@@ -24,6 +24,7 @@ import {
   failEnvironmentInvalidRequest,
   requireEnvironmentScope,
 } from "../auth/http.ts";
+import * as VoiceGoals from "./goals.ts";
 import * as SpeechPostProcessing from "./postProcessing.ts";
 import * as CloudSpeech from "./CloudSpeech.ts";
 import * as SpeechService from "./SpeechService.ts";
@@ -72,6 +73,7 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
     const speech = yield* SpeechService.SpeechService;
     const cloud = yield* CloudSpeech.CloudSpeech;
     const postProcessing = yield* SpeechPostProcessing.SpeechPostProcessing;
+    const voiceGoals = yield* VoiceGoals.VoiceGoals;
     const guard = Effect.fnUntraced(function* (
       endpoint: string,
       scope: AuthEnvironmentScope = AuthOrchestrationOperateScope,
@@ -240,6 +242,15 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
         }),
       )
       .handle(
+        "voiceGoals",
+        Effect.fn("environment.voice.voiceGoals")(function* (args) {
+          yield* guard(args.endpoint.name);
+          return yield* voiceGoals
+            .update(args.payload)
+            .pipe(Effect.catch((error) => failEnvironmentInternal("internal_error", error)));
+        }),
+      )
+      .handle(
         "postProcess",
         Effect.fn("environment.voice.postProcess")(function* (args) {
           yield* guard(args.endpoint.name);
@@ -249,4 +260,8 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
         }),
       );
   }),
-).pipe(Layer.provide(bodyLimit), Layer.provide(SpeechPostProcessing.layer));
+).pipe(
+  Layer.provide(bodyLimit),
+  Layer.provide(SpeechPostProcessing.layer),
+  Layer.provide(VoiceGoals.layer),
+);

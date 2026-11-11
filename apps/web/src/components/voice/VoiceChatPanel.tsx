@@ -242,7 +242,10 @@ function CaptionLine(props: { who: string; text: string | null; live: boolean; e
 function PanelBody({ threadRef }: { threadRef: ScopedThreadRef }) {
   const heard = useRealtimeVoiceStore((state) => state.heard);
   const spoken = useRealtimeVoiceStore((state) => state.spoken);
-  const requests = useRealtimeVoiceStore((state) => state.requests);
+  const goals = useRealtimeVoiceStore((state) => state.goals);
+  const summarizing = useRealtimeVoiceStore(
+    (state) => state.goals.length === 0 && state.requests.length > 0,
+  );
   const turn = useAtomValue(environmentThreadDetails.turnSubagentsAtom(threadRef));
   const projection = useQuietThreadProjection(threadRef)?.projection ?? null;
   const steps =
@@ -280,13 +283,17 @@ function PanelBody({ threadRef }: { threadRef: ScopedThreadRef }) {
         <CaptionLine who="T3" text={spoken?.text ?? null} live={false} empty="Waiting for you." />
       </div>
       <ItemList
-        title="Asked by voice"
-        items={requests.map((request) => ({
-          id: request.id,
-          label: firstLine(request.prompt),
-          status: request.status,
+        title="Goals"
+        items={goals.map((goal) => ({
+          id: goal.id,
+          label: goal.text,
+          status:
+            goal.status === "active" ? "working" : goal.status === "done" ? "done" : "stopped",
         }))}
       />
+      {summarizing ? (
+        <p className="text-xs text-muted-foreground">Working out your goals…</p>
+      ) : null}
       <ItemList title="Agents" items={agents} />
       <ItemList
         title="Steps"

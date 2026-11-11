@@ -9,6 +9,7 @@ import {
   type RealtimeVoiceCaption,
   type RealtimeVoiceRequest,
   type RealtimeVoiceThreadSnapshot,
+  updateVoiceGoals,
 } from "@t3tools/client-runtime/voice-input";
 import {
   AuthOrchestrationOperateScope,
@@ -18,7 +19,10 @@ import {
   MessageId,
   type RealtimeVoiceName,
   type ScopedThreadRef,
+  type VoiceGoal,
+  type VoiceGoalUpdate,
 } from "@t3tools/contracts";
+import { fallbackVoiceGoals } from "@t3tools/shared/voiceGoals";
 import { REALTIME_VOICE_DATA_CHANNEL } from "@t3tools/shared/realtimeVoice";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
@@ -56,6 +60,8 @@ interface RealtimeVoiceState {
   readonly spoken: RealtimeVoiceCaption | null;
   readonly activity: RealtimeVoiceActivity;
   readonly requests: ReadonlyArray<RealtimeVoiceRequest>;
+  /** What the user is after, summarized as the call goes. */
+  readonly goals: ReadonlyArray<VoiceGoal>;
   readonly muted: boolean;
 }
 
@@ -67,6 +73,7 @@ const IDLE: RealtimeVoiceState = {
   spoken: null,
   activity: "idle",
   requests: [],
+  goals: [],
   muted: false,
 };
 
@@ -266,6 +273,20 @@ export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
       );
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     };
+    const requestStatuses = new Map<string, RealtimeVoiceRequest["status"]>();
+    // Updates run one at a time, in order, so a slow summary cannot overwrite a newer one.
+    let goalUpdates = Promise.resolve();
+    const trackGoals = (update: VoiceGoalUpdate) => {
+      goalUpdates = goalUpdates.then(async () => {
+        if (ended) return;
+        const goals = useRealtimeVoiceStore.getState().goals;
+        const next = await runEnvironmentSpeech(updateVoiceGoals(prepared, goals, update)).then(
+          (result) => result.goals,
+          () => fallbackVoiceGoals(goals, update),
+        );
+        if (!ended) useRealtimeVoiceStore.setState({ goals: next });
+      });
+    };
     const conversation = new RealtimeVoiceConversation(
       {
         send: (event) => {
@@ -280,7 +301,20 @@ export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
           );
         },
         onRequests: (requests) => {
-          if (!ended) useRealtimeVoiceStore.setState({ requests });
+          if (ended) return;
+          useRealtimeVoiceStore.setState({ requests });
+          // Each new request, and each ending, is one event for the goal summary.
+          for (const request of requests) {
+            const before = requestStatuses.get(request.id);
+            requestStatuses.set(request.id, request.status);
+            if (before === undefined) trackGoals({ request: request.prompt });
+            if (request.status !== "working" && before !== request.status)
+              trackGoals({
+                request: request.prompt,
+                outcome: request.status === "stopped" ? "stopped" : request.status,
+                ...(request.result === undefined ? {} : { result: request.result }),
+              });
+          }
         },
         onActivity: (activity) => {
           if (!ended) useRealtimeVoiceStore.setState({ activity });

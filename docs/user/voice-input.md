@@ -156,8 +156,12 @@ once to refresh it. Choose the voice under **Settings → Voice → Voice chat**
 call is open, your microphone audio and what the agent writes in that thread go to
 OpenAI. Audio travels from this device straight to OpenAI. This uses the same
 undocumented route as Codex's own voice mode, so it can stop working if OpenAI changes it.
-While a call is open, a floating panel shows what was heard, what was said back, what you
-asked for by voice, and the agent's subagents and steps. Drag it by its top edge. Mute the
+While a call is open, a floating panel shows what was heard, what was said back, your
+goals, and the agent's subagents and steps. Goals are a short list of what you are after,
+summarized as you talk and ticked off when the agent finishes; a few seconds after each
+request or result, a small model rewrites the list. That model is the one used for voice
+cleanup and thread titles, and it reads your request and the agent's last message. Drag the
+panel by its top edge, or use **Pop out** to float it over other apps. Mute the
 microphone from the panel or with `Alt+M` (`Option+M` on Mac), which you can change under
 **Settings → Keybindings**. Requests sent by voice appear folded in the thread; open one to
 read it.
