@@ -11,6 +11,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Electron from "electron";
 
 import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import { VOICE_PANEL_WINDOW_NAME } from "@t3tools/shared/voicePanelWindow";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -653,12 +654,42 @@ export const make = Effect.gen(function* () {
       });
     };
     installContextMenu(window, window.webContents);
+    window.webContents.on("did-create-window", (popup, { frameName }) => {
+      if (frameName !== VOICE_PANEL_WINDOW_NAME) return;
+      popup.setAlwaysOnTop(true, environment.platform === "darwin" ? "floating" : "normal");
+      if (environment.platform === "darwin") {
+        popup.setVisibleOnAllWorkspaces(true, {
+          visibleOnFullScreen: true,
+          // Electron's temporary UIElement transformation would remove the app from the Dock.
+          skipTransformProcessType: true,
+        });
+      }
+    });
     window.webContents.on("did-attach-webview", (_event, contents) => {
       installContextMenu(window, contents);
       void runPromise(previewManager.prepareWebview(contents));
     });
 
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    window.webContents.setWindowOpenHandler(({ url, frameName }) => {
+      // The voice panel pops out as a small window the page fills in itself; nothing else may.
+      if (url === "about:blank" && frameName === VOICE_PANEL_WINDOW_NAME) {
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            width: 340,
+            height: 460,
+            minWidth: 280,
+            minHeight: 160,
+            title: "T3 Code voice chat",
+            alwaysOnTop: true,
+            autoHideMenuBar: true,
+            fullscreenable: false,
+            maximizable: false,
+            minimizable: false,
+            skipTaskbar: true,
+          },
+        };
+      }
       if (Option.isSome(ElectronShell.parseSafeExternalUrl(url))) {
         void runPromise(electronShell.openExternal(url));
       }

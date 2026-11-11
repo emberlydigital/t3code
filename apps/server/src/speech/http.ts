@@ -4,6 +4,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   type AuthEnvironmentScope,
+  DEFAULT_REALTIME_VOICE,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
   type EnvironmentSpeechModels,
@@ -23,6 +24,8 @@ import {
   failEnvironmentInvalidRequest,
   requireEnvironmentScope,
 } from "../auth/http.ts";
+import * as VoiceCallControl from "./callControl.ts";
+import * as VoiceGoals from "./goals.ts";
 import * as SpeechPostProcessing from "./postProcessing.ts";
 import * as CloudSpeech from "./CloudSpeech.ts";
 import * as SpeechService from "./SpeechService.ts";
@@ -71,6 +74,8 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
     const speech = yield* SpeechService.SpeechService;
     const cloud = yield* CloudSpeech.CloudSpeech;
     const postProcessing = yield* SpeechPostProcessing.SpeechPostProcessing;
+    const voiceGoals = yield* VoiceGoals.VoiceGoals;
+    const callControl = yield* VoiceCallControl.VoiceCallControl;
     const guard = Effect.fnUntraced(function* (
       endpoint: string,
       scope: AuthEnvironmentScope = AuthOrchestrationOperateScope,
@@ -124,6 +129,24 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
               }),
             );
           return { text };
+        }),
+      )
+      .handle(
+        "realtimeCall",
+        Effect.fn("environment.voice.realtimeCall")(function* (args) {
+          yield* guard(args.endpoint.name);
+          const sdp = yield* cloud
+            .realtimeCall(
+              args.payload.sdp,
+              args.payload.voice ?? DEFAULT_REALTIME_VOICE,
+              args.payload.context,
+            )
+            .pipe(
+              Effect.catchTags({
+                ServerSettingsError: (error) => failEnvironmentInternal("internal_error", error),
+              }),
+            );
+          return { sdp };
         }),
       )
       .handle(
@@ -221,6 +244,22 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
         }),
       )
       .handle(
+        "voiceCallHangUp",
+        Effect.fn("environment.voice.voiceCallHangUp")(function* (args) {
+          yield* guard(args.endpoint.name);
+          return { hangUp: yield* callControl.waitForHangUp(args.query.threadId) };
+        }),
+      )
+      .handle(
+        "voiceGoals",
+        Effect.fn("environment.voice.voiceGoals")(function* (args) {
+          yield* guard(args.endpoint.name);
+          return yield* voiceGoals
+            .update(args.payload)
+            .pipe(Effect.catch((error) => failEnvironmentInternal("internal_error", error)));
+        }),
+      )
+      .handle(
         "postProcess",
         Effect.fn("environment.voice.postProcess")(function* (args) {
           yield* guard(args.endpoint.name);
@@ -230,4 +269,8 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
         }),
       );
   }),
-).pipe(Layer.provide(bodyLimit), Layer.provide(SpeechPostProcessing.layer));
+).pipe(
+  Layer.provide(bodyLimit),
+  Layer.provide(SpeechPostProcessing.layer),
+  Layer.provide(VoiceGoals.layer),
+);

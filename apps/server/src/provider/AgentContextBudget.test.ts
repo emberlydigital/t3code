@@ -15,6 +15,7 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import { PreviewAutomationBroker } from "../mcp/PreviewAutomationBroker.ts";
+import { VoiceCallControl } from "../speech/callControl.ts";
 import {
   CLAUDE_PROVIDER,
   makeClaudeQueryOptions,
@@ -78,6 +79,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService)({}),
   Layer.mock(ThreadManagementService)({}),
+  Layer.mock(VoiceCallControl)({}),
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));

@@ -372,7 +372,25 @@ function formatEnvelopeEntry(
   return `${open}>\n${escapeComposerContextPayloadText(body)}\n</${CONTEXT_ENTRY_TAG}>`;
 }
 
+/** Speech-to-text keeps filler and mishears words; the agent should act on the meaning. */
+const SPOKEN_MESSAGE_NOTE =
+  "[The user said this aloud in a voice call; it is a speech transcript and may contain mistranscribed words and false starts. Act on what they mean.]";
+
 export function projectComposerContextForProvider(input: {
+  text: string;
+  records: ReadonlyArray<ComposerContextRecord>;
+  /** The message came from a voice call. */
+  spoken?: boolean;
+}): string {
+  const projected = projectReferences(input);
+  return input.spoken
+    ? `${SPOKEN_MESSAGE_NOTE}
+
+${projected}`
+    : projected;
+}
+
+function projectReferences(input: {
   text: string;
   records: ReadonlyArray<ComposerContextRecord>;
 }): string {

@@ -52,6 +52,9 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
       "rate-limit",
       "model-unavailable",
       "unavailable",
+      "voice-chat-unavailable",
+      "chatgpt-signin-missing",
+      "chatgpt-signin-expired",
     ]),
   },
   { httpApiStatus: 422 },
@@ -73,6 +76,12 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
         return `The chosen model isn’t available on ${name}. Choose another model in Settings → Voice.`;
       case "unavailable":
         return `${name} couldn’t transcribe this recording. Try again later.`;
+      case "voice-chat-unavailable":
+        return `${name} couldn’t start the voice chat. Try again later.`;
+      case "chatgpt-signin-missing":
+        return "Voice chat uses your ChatGPT account. Sign in to Codex with ChatGPT on this machine, then try again.";
+      case "chatgpt-signin-expired":
+        return "Your ChatGPT sign-in has expired. Open Codex once to refresh it, then try again.";
     }
   }
 }
@@ -264,6 +273,67 @@ export const EnvironmentSpeechStatus = Schema.Union([
 export type EnvironmentSpeechStatus = typeof EnvironmentSpeechStatus.Type;
 
 export const EnvironmentSpeechTranscriptionResult = Schema.Struct({ text: Schema.String });
+
+const RealtimeVoiceSdpText = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(64 * 1024),
+);
+/** A WebRTC session description. The audio itself flows between the client and OpenAI. */
+export const RealtimeVoiceSdp = Schema.Struct({ sdp: RealtimeVoiceSdpText });
+
+/** The voices Codex offers on the ChatGPT voice route. */
+export const RealtimeVoiceName = Schema.Literals([
+  "sol",
+  "cove",
+  "juniper",
+  "maple",
+  "spruce",
+  "ember",
+  "vale",
+  "breeze",
+  "arbor",
+]);
+export type RealtimeVoiceName = typeof RealtimeVoiceName.Type;
+export const DEFAULT_REALTIME_VOICE: RealtimeVoiceName = "sol";
+export const isRealtimeVoiceName = Schema.is(RealtimeVoiceName);
+
+/** The app's open question to the environment: should this thread's call hang up? */
+export const VoiceCallHangUpResult = Schema.Struct({ hangUp: Schema.Boolean });
+export type VoiceCallHangUpResult = typeof VoiceCallHangUpResult.Type;
+
+export const VoiceGoalStatus = Schema.Literals(["active", "done", "dropped"]);
+export type VoiceGoalStatus = typeof VoiceGoalStatus.Type;
+/** One thing the user wants from a voice call, in a few plain words. */
+export const VoiceGoal = Schema.Struct({
+  id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32)),
+  text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
+  status: VoiceGoalStatus,
+});
+export type VoiceGoal = typeof VoiceGoal.Type;
+export const VOICE_GOALS_MAX = 8;
+/** What just happened: the user asked for something, and later how that work ended. */
+export const VoiceGoalUpdate = Schema.Struct({
+  request: Schema.String.check(Schema.isMaxLength(2000)),
+  outcome: Schema.optionalKey(Schema.Literals(["done", "stopped", "failed"])),
+  /** The agent's last message when the work finished. */
+  result: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2000))),
+});
+export type VoiceGoalUpdate = typeof VoiceGoalUpdate.Type;
+export const VoiceGoalsRequest = Schema.Struct({
+  goals: Schema.Array(VoiceGoal).check(Schema.isMaxLength(12)),
+  update: VoiceGoalUpdate,
+});
+export type VoiceGoalsRequest = typeof VoiceGoalsRequest.Type;
+export const VoiceGoalsResult = Schema.Struct({ goals: Schema.Array(VoiceGoal) });
+export type VoiceGoalsResult = typeof VoiceGoalsResult.Type;
+
+export const RealtimeVoiceCallRequest = Schema.Struct({
+  sdp: RealtimeVoiceSdpText,
+  /** Older clients omit it and get the default voice. */
+  voice: Schema.optionalKey(RealtimeVoiceName),
+  /** What the thread is about, so the call starts informed instead of asking. */
+  context: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4000))),
+});
 
 export const EnvironmentSpeechAccelerationRequest = Schema.Struct({
   acceleration: SpeechAcceleration,

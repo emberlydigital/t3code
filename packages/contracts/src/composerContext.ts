@@ -284,6 +284,8 @@ export type GuestMessageAttribution = typeof GuestMessageAttribution.Type;
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
   guest: Schema.optional(GuestMessageAttribution),
+  /** Voice chat wrote this message from speech; clients fold it. Older clients ignore it. */
+  source: Schema.optional(Schema.Literal("voice")),
   records: Schema.Array(Schema.Unknown)
     .check(
       Schema.isMaxLength(COMPOSER_CONTEXT_MAX_RECORDS),

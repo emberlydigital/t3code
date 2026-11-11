@@ -64,6 +64,11 @@ import {
   EnvironmentSpeechPostProcessingResult,
   EnvironmentSpeechStatus,
   EnvironmentSpeechTranscriptionResult,
+  RealtimeVoiceCallRequest,
+  RealtimeVoiceSdp,
+  VoiceCallHangUpResult,
+  VoiceGoalsRequest,
+  VoiceGoalsResult,
 } from "./speech.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
@@ -836,6 +841,15 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
       .middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
+    // Carries the offer and the answer only; the key and the session stay on the server.
+    HttpApiEndpoint.post("realtimeCall", "/api/voice/realtime/call", {
+      headers: OptionalBearerHeaders,
+      payload: RealtimeVoiceCallRequest,
+      success: RealtimeVoiceSdp,
+      error: [...EnvironmentScopedOperationErrors, CloudSpeechError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
     HttpApiEndpoint.get("status", "/api/voice/status", {
       headers: OptionalBearerHeaders,
       success: EnvironmentSpeechStatus,
@@ -922,6 +936,24 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     })
       .middleware(EnvironmentVoiceBodyLimit)
       .middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    // Held open until an agent asks to hang up the call, or for about 25 seconds.
+    HttpApiEndpoint.get("voiceCallHangUp", "/api/voice/call/hang-up", {
+      headers: OptionalBearerHeaders,
+      query: Schema.Struct({ threadId: ThreadId }),
+      success: VoiceCallHangUpResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    // Sends the user's spoken requests, and the agent's last message, to the environment's text model.
+    HttpApiEndpoint.post("voiceGoals", "/api/voice/goals", {
+      headers: OptionalBearerHeaders,
+      payload: VoiceGoalsRequest,
+      success: VoiceGoalsResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
     HttpApiEndpoint.post("postProcess", "/api/voice/post-process", {
