@@ -38,6 +38,7 @@ import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActi
 import { SettingsDragHandle } from "./components/SettingsDragHandle";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { VoiceChatSettingsSection } from "../voice-chat/VoiceChatSettingsSection";
 import {
   deviceMicrophoneOrder,
   localVoiceTranscriberAtom,
@@ -383,6 +384,7 @@ export function SettingsVoiceRouteScreen() {
             ? " Android may still use a different microphone if the preferred one can’t be routed."
             : null}
         </Text>
+        <VoiceChatSettingsSection />
       </ScrollView>
     </SettingsScreen>
   );

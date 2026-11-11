@@ -142,8 +142,8 @@ the model hears the cue as a dictionary hint.
 
 ## Talk to a thread
 
-Voice chat is a live spoken conversation about one thread, on web and desktop. Open a
-thread and choose **Start voice chat** beside the microphone. Say what you want done:
+Voice chat is a live spoken conversation about one thread, on web, desktop, and mobile. Open a
+thread and choose **Start voice chat** beside the microphone (the waveform button on mobile). Say what you want done:
 your request is sent to the thread's agent as a normal message, and when the agent
 finishes you hear a short summary while the full output stays in the thread. You can
 keep talking while the agent works to steer it, or ask it to stop. Messages you type
@@ -161,15 +161,16 @@ goals, and the agent's subagents and steps. Goals are a short list of what you a
 summarized as you talk and ticked off when the agent finishes; a few seconds after each
 request or result, a small model rewrites the list. That model is the one used for voice
 cleanup and thread titles, and it reads your request and the agent's last message. Drag the
-panel by its top edge, or use **Pop out** to float it over other apps. Mute the
+panel by its top edge, or use **Pop out** to float it over other apps. On mobile the panel
+stays above every screen; tap its title to fold it. Mute the
 microphone from the panel or with `Alt+M` (`Option+M` on Mac), which you can change under
 **Settings → Keybindings**. Requests sent by voice appear folded in the thread; open one to
 read it.
 
 You can also ask to end the call ("hang up", "end this chat"). The agent in the thread
 hangs up for you with a T3 tool, after any goodbye finishes, so it needs an agent that can
-use T3 tools. It ends only the call: the agent keeps working. Or choose **End voice chat** to hang up. That only ends the call: the agent keeps working, and
-you can stop it from the thread as usual. A window holds one call at a time, and the call
+use T3 tools. Or choose **End voice chat** to hang up. Either way only the call ends: the agent keeps
+working, and you can stop it from the thread as usual. A window holds one call at a time, and the call
 stays with its thread if you open another one.
 
 ## Test and troubleshoot

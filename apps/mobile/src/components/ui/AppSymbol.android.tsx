@@ -86,6 +86,9 @@ import IconLayoutSidebar from "@tabler/icons-react-native/IconLayoutSidebar";
 import IconLayoutSidebarRight from "@tabler/icons-react-native/IconLayoutSidebarRight";
 import IconLetterSpacing from "@tabler/icons-react-native/IconLetterSpacing";
 import IconMicrophone from "@tabler/icons-react-native/IconMicrophone";
+import IconMicrophoneOff from "@tabler/icons-react-native/IconMicrophoneOff";
+import IconPhoneOff from "@tabler/icons-react-native/IconPhoneOff";
+import IconWaveSine from "@tabler/icons-react-native/IconWaveSine";
 import IconLink from "@tabler/icons-react-native/IconLink";
 import IconListNumbers from "@tabler/icons-react-native/IconListNumbers";
 import IconMenu2 from "@tabler/icons-react-native/IconMenu2";
@@ -235,7 +238,9 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   macstudio: IconDeviceDesktop,
   magnifyingglass: IconSearch,
   mic: IconMicrophone,
+  "mic.slash": IconMicrophoneOff,
   paintbrush: IconPalette,
+  "phone.down.fill": IconPhoneOff,
   pencil: IconPencil,
   "person.crop.circle": IconUserCircle,
   "person.2": IconUsers,
@@ -288,6 +293,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "tray.and.arrow.down": IconDownload,
   "tray.and.arrow.up": IconUpload,
   trash: IconTrash,
+  waveform: IconWaveSine,
   wifi: IconWifi,
   "wifi.slash": IconWifiOff,
   "wrench.and.screwdriver": IconTool,

@@ -250,7 +250,7 @@ export function DictationElapsedTime(props: {
   );
 }
 
-function VoiceActionButton(props: {
+export function VoiceActionButton(props: {
   readonly size?: "regular" | "large";
   readonly accessibilityLabel: string;
   readonly disabled?: boolean;

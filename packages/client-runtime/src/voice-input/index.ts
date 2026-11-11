@@ -33,12 +33,21 @@ export {
   updateEnvironmentSpeechModelUnloadTimeout,
 } from "./environment.ts";
 export {
-  RealtimeVoiceConversation,
   type RealtimeVoiceActivity,
   type RealtimeVoiceCaption,
   type RealtimeVoiceRequest,
   type RealtimeVoiceThreadSnapshot,
 } from "./realtimeVoice.ts";
+export {
+  IDLE_REALTIME_VOICE_CALL,
+  RealtimeVoiceCall,
+  realtimeVoiceOpeningContext,
+  realtimeVoiceThreadSnapshot,
+  type RealtimeVoiceCallDependencies,
+  type RealtimeVoiceCallState,
+  type RealtimeVoiceCallStatus,
+  type RealtimeVoiceTransport,
+} from "./realtimeVoiceCall.ts";
 export { openSpeechStream } from "./stream.ts";
 export {
   VoiceTranscriptionError,
