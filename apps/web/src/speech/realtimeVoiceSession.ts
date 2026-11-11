@@ -31,6 +31,7 @@ import { appAtomRegistry, subscribeAtomChanges } from "../rpc/atomRegistry";
 import { readPreparedConnection, readEnvironmentScope } from "../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../state/threads";
 import { DEFAULT_INTERACTION_MODE } from "../types";
+import { playCallEndSound, playCallStartSound } from "./callSounds";
 import { runEnvironmentSpeech } from "./runEnvironmentSpeech";
 
 /** How many of the thread's newest messages each change re-reads. */
@@ -179,6 +180,8 @@ export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
     ended = true;
     endCurrentCall = null;
     setMicrophoneEnabled = null;
+    // A call that never connected has nothing to say goodbye to.
+    if (useRealtimeVoiceStore.getState().status === "live") playCallEndSound();
     useRealtimeVoiceStore.setState(IDLE);
     // Cutting playback mid-sample clicks, so the voice fades before the call closes.
     setTimeout(() => {
@@ -296,6 +299,7 @@ export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
       );
       conversation.threadChanged(snapshot(threadRef));
       useRealtimeVoiceStore.setState({ status: "live" });
+      playCallStartSound();
     });
     channel.addEventListener("message", (event) => {
       try {

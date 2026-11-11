@@ -2,10 +2,23 @@ import { useAtomValue } from "@effect/atom-react";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AudioLinesIcon, MicIcon, MicOffIcon, PhoneOffIcon } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, type ReactNode, useRef, useState } from "react";
+import {
+  AudioLinesIcon,
+  MicIcon,
+  MicOffIcon,
+  PhoneOffIcon,
+  PictureInPicture2Icon,
+} from "lucide-react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
-import { shortcutLabelForCommand } from "../../keybindings";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { registerCommands } from "../../shortcuts/dispatcher";
 import {
@@ -42,6 +55,62 @@ registerCommands(
   },
   { when: () => useRealtimeVoiceStore.getState().status !== "idle" },
 );
+
+interface DocumentPictureInPicture {
+  requestWindow(options?: { width?: number; height?: number }): Promise<Window>;
+}
+
+function documentPictureInPicture() {
+  return (window as { documentPictureInPicture?: DocumentPictureInPicture })
+    .documentPictureInPicture;
+}
+
+/** The pop-out is a bare document, so it gets the app's styles and follows its theme. */
+function mirrorDocument(target: Document) {
+  for (const sheet of document.querySelectorAll('link[rel="stylesheet"], style'))
+    target.head.appendChild(sheet.cloneNode(true));
+  const copyRootAttributes = () => {
+    for (const { name, value } of document.documentElement.attributes)
+      target.documentElement.setAttribute(name, value);
+    target.body.className = document.body.className;
+  };
+  copyRootAttributes();
+  const observer = new MutationObserver(copyRootAttributes);
+  observer.observe(document.documentElement, { attributes: true });
+  target.defaultView?.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+}
+
+/**
+ * Moves the panel into a small always-on-top window that floats over other apps. The call, the
+ * microphone and the audio stay in this window; only what is drawn moves.
+ */
+function usePopOut(callOpen: boolean) {
+  const [popped, setPopped] = useState<Window | null>(null);
+  const supported = documentPictureInPicture() !== undefined;
+
+  const popOut = async () => {
+    const api = documentPictureInPicture();
+    if (api === undefined || popped !== null) return;
+    try {
+      const next = await api.requestWindow({ width: 340, height: 440 });
+      mirrorDocument(next.document);
+      next.addEventListener("pagehide", () => setPopped(null), { once: true });
+      setPopped(next);
+    } catch {
+      // The browser refused the window (no recent click, or pop-outs are off); the panel stays in the app.
+    }
+  };
+  const popIn = () => popped?.close();
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the separate window when the call ends or the page unmounts
+  useEffect(() => {
+    if (!callOpen) popped?.close();
+  }, [callOpen, popped]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a separate window has its own key events, which the page's shortcut listener never sees
+  useEffect(() => () => popped?.close(), [popped]);
+
+  return { popped, supported, popOut, popIn };
+}
 
 function firstLine(text: string) {
   return text.trim().split(/\r?\n/, 1)[0] ?? "";
@@ -213,9 +282,25 @@ function HeaderButton(props: {
   tooltip: ReactNode;
   variant: "ghost" | "destructive";
   pressed?: boolean;
+  /** In the pop-out window, where the page's tooltips cannot appear. */
+  native?: boolean;
   onClick(): void;
   children: ReactNode;
 }) {
+  if (props.native)
+    return (
+      <Button
+        type="button"
+        size="icon-sm-pill"
+        variant={props.variant}
+        aria-label={props.label}
+        aria-pressed={props.pressed}
+        title={typeof props.tooltip === "string" ? props.tooltip : props.label}
+        onClick={props.onClick}
+      >
+        {props.children}
+      </Button>
+    );
   return (
     <Tooltip>
       <TooltipTrigger
@@ -241,7 +326,8 @@ function HeaderButton(props: {
 
 /**
  * The live voice call, floating above every route so it stays reachable while the user moves
- * between threads. Ending the call here only hangs up; the thread's agent keeps working.
+ * between threads, or popped out into its own window over other apps. Ending the call here only
+ * hangs up; the thread's agent keeps working.
  */
 export function VoiceChatPanel() {
   const status = useRealtimeVoiceStore((state) => state.status);
@@ -258,8 +344,23 @@ export function VoiceChatPanel() {
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   // Null keeps the resting corner; a drag pins the panel where it was dropped.
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const callOpen = status !== "idle" && threadRef !== null;
+  const { popped, supported, popOut, popIn } = usePopOut(callOpen);
 
-  if (status === "idle" || threadRef === null) return null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the pop-out window has its own key events, which the page's shortcut listener never sees
+  useEffect(() => {
+    if (popped === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || resolveShortcutCommand(event, keybindings) !== "voiceChat.toggleMute")
+        return;
+      event.preventDefault();
+      toggleRealtimeVoiceMute();
+    };
+    popped.addEventListener("keydown", onKeyDown);
+    return () => popped.removeEventListener("keydown", onKeyDown);
+  }, [popped, keybindings]);
+
+  if (!callOpen) return null;
 
   const muteShortcut = shortcutLabelForCommand(keybindings, "voiceChat.toggleMute");
   const label =
@@ -305,6 +406,97 @@ export function VoiceChatPanel() {
       event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const inWindow = popped !== null;
+  const header = (
+    <div
+      className={cn(
+        "flex items-center gap-2 px-3 py-2 select-none",
+        !inWindow && "cursor-grab touch-none active:cursor-grabbing",
+      )}
+      {...(inWindow
+        ? {}
+        : {
+            onPointerDown: beginDrag,
+            onPointerMove: drag,
+            onPointerUp: endDrag,
+            onPointerCancel: endDrag,
+          })}
+    >
+      <AudioLinesIcon
+        aria-hidden
+        className={cn(
+          "size-4 shrink-0",
+          muted || status === "connecting" ? "text-muted-foreground" : "text-primary",
+          activity !== "idle" && !muted && "motion-safe:animate-status-pulse",
+        )}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium" role="status">
+          {label}
+        </p>
+        <button
+          type="button"
+          className="block max-w-full truncate text-left text-3xs text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() =>
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(threadRef),
+            })
+          }
+        >
+          {title}
+        </button>
+      </div>
+      {supported ? (
+        <HeaderButton
+          label={inWindow ? "Return to app" : "Pop out"}
+          tooltip={inWindow ? "Return to the app" : "Pop out to float over other apps"}
+          variant="ghost"
+          native={inWindow}
+          onClick={inWindow ? popIn : () => void popOut()}
+        >
+          <PictureInPicture2Icon />
+        </HeaderButton>
+      ) : null}
+      <HeaderButton
+        label={muted ? "Unmute microphone" : "Mute microphone"}
+        tooltip={`${muted ? "Unmute" : "Mute"}${muteShortcut ? ` (${muteShortcut})` : ""}`}
+        variant="ghost"
+        pressed={muted}
+        native={inWindow}
+        onClick={toggleRealtimeVoiceMute}
+      >
+        {muted ? <MicOffIcon /> : <MicIcon />}
+      </HeaderButton>
+      <HeaderButton
+        label="End voice chat"
+        tooltip={working ? "End voice chat. The agent keeps working." : "End voice chat"}
+        variant="destructive"
+        native={inWindow}
+        onClick={stopRealtimeVoice}
+      >
+        <PhoneOffIcon />
+      </HeaderButton>
+    </div>
+  );
+
+  if (popped !== null)
+    return createPortal(
+      <div
+        role="region"
+        aria-label="Voice chat"
+        data-slot="voice-chat-panel"
+        className="flex h-screen flex-col bg-popover text-popover-foreground"
+      >
+        {header}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PanelBody threadRef={threadRef} />
+        </div>
+      </div>,
+      popped.document.body,
+    );
+
   return (
     <div
       ref={panelRef}
@@ -317,57 +509,7 @@ export function VoiceChatPanel() {
       )}
       style={position === null ? undefined : { left: position.x, top: position.y }}
     >
-      <div
-        className="flex cursor-grab touch-none items-center gap-2 px-3 py-2 select-none active:cursor-grabbing"
-        onPointerDown={beginDrag}
-        onPointerMove={drag}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-      >
-        <AudioLinesIcon
-          aria-hidden
-          className={cn(
-            "size-4 shrink-0",
-            muted || status === "connecting" ? "text-muted-foreground" : "text-primary",
-            activity !== "idle" && !muted && "motion-safe:animate-status-pulse",
-          )}
-        />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium" role="status">
-            {label}
-          </p>
-          <button
-            type="button"
-            className="block max-w-full truncate text-left text-3xs text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={() =>
-              void navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(threadRef),
-              })
-            }
-          >
-            {title}
-          </button>
-        </div>
-        <HeaderButton
-          label={muted ? "Unmute microphone" : "Mute microphone"}
-          tooltip={`${muted ? "Unmute" : "Mute"}${muteShortcut ? ` (${muteShortcut})` : ""}`}
-          variant="ghost"
-          pressed={muted}
-          onClick={toggleRealtimeVoiceMute}
-        >
-          {muted ? <MicOffIcon /> : <MicIcon />}
-        </HeaderButton>
-        <HeaderButton
-          label="End voice chat"
-          tooltip={working ? "End voice chat. The agent keeps working." : "End voice chat"}
-          variant="destructive"
-          onClick={stopRealtimeVoice}
-        >
-          <PhoneOffIcon />
-        </HeaderButton>
-      </div>
+      {header}
       <div className="min-h-0 overflow-y-auto">
         <PanelBody threadRef={threadRef} />
       </div>
