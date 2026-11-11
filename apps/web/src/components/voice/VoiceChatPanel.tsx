@@ -19,6 +19,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
+import { VOICE_PANEL_WINDOW_NAME } from "@t3tools/shared/voicePanelWindow";
 import { cn } from "../../lib/utils";
 import { registerCommands } from "../../shortcuts/dispatcher";
 import {
@@ -31,9 +32,12 @@ import { primaryServerKeybindingsAtom } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { Button } from "../ui/button";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const EDGE_GAP = 12;
+const POP_OUT_WIDTH = 340;
+const POP_OUT_HEIGHT = 460;
 const MAX_ROWS = 5;
 
 type ItemStatus = "working" | "done" | "failed" | "stopped" | "waiting";
@@ -65,6 +69,27 @@ function documentPictureInPicture() {
     .documentPictureInPicture;
 }
 
+/**
+ * Chromium's pop-out floats over every app but needs a full browser window, which the desktop
+ * app's windows are not. There, and in browsers without it, an ordinary pop-up window does the
+ * job; the desktop app marks that one window always-on-top.
+ */
+async function openPopOutWindow(): Promise<Window | null> {
+  const pictureInPicture = documentPictureInPicture();
+  if (pictureInPicture !== undefined) {
+    try {
+      return await pictureInPicture.requestWindow({ width: POP_OUT_WIDTH, height: POP_OUT_HEIGHT });
+    } catch {
+      // Not allowed here; try the pop-up instead.
+    }
+  }
+  return window.open(
+    "about:blank",
+    VOICE_PANEL_WINDOW_NAME,
+    `popup,width=${POP_OUT_WIDTH},height=${POP_OUT_HEIGHT}`,
+  );
+}
+
 /** The pop-out is a bare document, so it gets the app's styles and follows its theme. */
 function mirrorDocument(target: Document) {
   for (const sheet of document.querySelectorAll('link[rel="stylesheet"], style'))
@@ -86,19 +111,26 @@ function mirrorDocument(target: Document) {
  */
 function usePopOut(callOpen: boolean) {
   const [popped, setPopped] = useState<Window | null>(null);
-  const supported = documentPictureInPicture() !== undefined;
+  // Any page can open a pop-up; only some can open the always-on-top kind.
+  const supported = true;
 
   const popOut = async () => {
-    const api = documentPictureInPicture();
-    if (api === undefined || popped !== null) return;
-    try {
-      const next = await api.requestWindow({ width: 340, height: 440 });
-      mirrorDocument(next.document);
-      next.addEventListener("pagehide", () => setPopped(null), { once: true });
-      setPopped(next);
-    } catch {
-      // The browser refused the window (no recent click, or pop-outs are off); the panel stays in the app.
+    if (popped !== null) return;
+    const next = await openPopOutWindow();
+    if (next === null) {
+      toastManager.add({
+        type: "warning",
+        title: "Couldn't pop the panel out",
+        description: "The window was blocked. Allow pop-ups for this page and try again.",
+      });
+      return;
     }
+    mirrorDocument(next.document);
+    next.document.title = "T3 Code voice chat";
+    next.addEventListener("pagehide", () => setPopped(null), { once: true });
+    // A reload leaves the window behind with nothing driving it.
+    window.addEventListener("pagehide", () => next.close(), { once: true });
+    setPopped(next);
   };
   const popIn = () => popped?.close();
 

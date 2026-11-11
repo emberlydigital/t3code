@@ -546,6 +546,10 @@
     "./realtimeVoice": {
       "types": "./src/realtimeVoice.ts",
       "import": "./src/realtimeVoice.ts"
+    },
+    "./voicePanelWindow": {
+      "types": "./src/voicePanelWindow.ts",
+      "import": "./src/voicePanelWindow.ts"
     }
   },
   "scripts": {
