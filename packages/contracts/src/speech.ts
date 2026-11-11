@@ -297,6 +297,10 @@ export type RealtimeVoiceName = typeof RealtimeVoiceName.Type;
 export const DEFAULT_REALTIME_VOICE: RealtimeVoiceName = "sol";
 export const isRealtimeVoiceName = Schema.is(RealtimeVoiceName);
 
+/** The app's open question to the environment: should this thread's call hang up? */
+export const VoiceCallHangUpResult = Schema.Struct({ hangUp: Schema.Boolean });
+export type VoiceCallHangUpResult = typeof VoiceCallHangUpResult.Type;
+
 export const VoiceGoalStatus = Schema.Literals(["active", "done", "dropped"]);
 export type VoiceGoalStatus = typeof VoiceGoalStatus.Type;
 /** One thing the user wants from a voice call, in a few plain words. */

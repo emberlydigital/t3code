@@ -73,6 +73,14 @@ parse falls back to a plain list in
 [shared code](../../packages/shared/src/voiceGoals.ts) rather than failing. The client
 sends one update at a time, in order, so a slow summary cannot overwrite a newer one.
 
+An agent hangs up the call with `t3_voice_call_end`. The call lives in the client, so the
+client keeps one question open to [the call control service](../../apps/server/src/speech/callControl.ts)
+(a 25 second long poll, asked again until the call ends) and the tool answers it. A hang-up
+that lands between two questions is held for a few seconds, and one with nobody listening reports
+`hungUp: false` rather than waiting for a later call. A long poll avoids a new push channel
+and its client permission surface; the tool's text is part of every agent's context, so
+`agentContextBudget.json` grew by its size.
+
 The call's control channel ends in the client, not on the server. The
 [conversation](../../packages/client-runtime/src/voice-input/realtimeVoice.ts) turns the
 model's delegations into the same thread commands the composer sends and feeds the

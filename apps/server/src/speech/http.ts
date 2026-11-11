@@ -24,6 +24,7 @@ import {
   failEnvironmentInvalidRequest,
   requireEnvironmentScope,
 } from "../auth/http.ts";
+import * as VoiceCallControl from "./callControl.ts";
 import * as VoiceGoals from "./goals.ts";
 import * as SpeechPostProcessing from "./postProcessing.ts";
 import * as CloudSpeech from "./CloudSpeech.ts";
@@ -74,6 +75,7 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
     const cloud = yield* CloudSpeech.CloudSpeech;
     const postProcessing = yield* SpeechPostProcessing.SpeechPostProcessing;
     const voiceGoals = yield* VoiceGoals.VoiceGoals;
+    const callControl = yield* VoiceCallControl.VoiceCallControl;
     const guard = Effect.fnUntraced(function* (
       endpoint: string,
       scope: AuthEnvironmentScope = AuthOrchestrationOperateScope,
@@ -239,6 +241,13 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
             .transcribe(decoded.value.pcm, decoded.value.options)
             .pipe(mapSpeechError);
           return { text };
+        }),
+      )
+      .handle(
+        "voiceCallHangUp",
+        Effect.fn("environment.voice.voiceCallHangUp")(function* (args) {
+          yield* guard(args.endpoint.name);
+          return { hangUp: yield* callControl.waitForHangUp(args.query.threadId) };
         }),
       )
       .handle(

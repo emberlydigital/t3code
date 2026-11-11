@@ -10,6 +10,7 @@ import {
   type RealtimeVoiceRequest,
   type RealtimeVoiceThreadSnapshot,
   updateVoiceGoals,
+  waitForVoiceCallHangUp,
 } from "@t3tools/client-runtime/voice-input";
 import {
   AuthOrchestrationOperateScope,
@@ -43,10 +44,30 @@ const RECENT_MESSAGES = 40;
 const CONTEXT_MAX_CHARS = 3000;
 const DISCLOSED_KEY = "t3code:voice-chat-disclosed:v2";
 
+/** Resolves once the voice model is not speaking, or after `maxMs`, plus a moment for the audio to drain. */
+function whenNotSpeaking(maxMs: number) {
+  return new Promise<void>((resolve) => {
+    let unsubscribe = () => {};
+    const timer = setTimeout(done, maxMs);
+    function done() {
+      clearTimeout(timer);
+      unsubscribe();
+      setTimeout(resolve, AUDIO_DRAIN_MS);
+    }
+    if (useRealtimeVoiceStore.getState().activity !== "speaking") return done();
+    unsubscribe = useRealtimeVoiceStore.subscribe((state) => {
+      if (state.activity !== "speaking") done();
+    });
+  });
+}
+
 /** A voice saved for an earlier voice list falls back to the default. */
 export function resolveVoiceChatVoice(saved: string): RealtimeVoiceName {
   return isRealtimeVoiceName(saved) ? saved : DEFAULT_REALTIME_VOICE;
 }
+const GOODBYE_WAIT_MS = 8000;
+const AUDIO_DRAIN_MS = 400;
+const HANG_UP_RETRY_MS = 3000;
 const FADE_MS = 180;
 const FADE_STEPS = 12;
 const isCloudSpeechError = Schema.is(CloudSpeechError);
@@ -323,6 +344,33 @@ export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
       snapshot(threadRef),
     );
 
+    // An agent can hang up the call with a tool. The environment answers one open question at a
+    // time, so ask again until the call ends.
+    const isOver = () => ended;
+    const watching = new AbortController();
+    own(() => watching.abort());
+    const watchForHangUp = () => {
+      void (async () => {
+        // `end` flips `ended` from another closure, so read it through a function.
+        while (!isOver()) {
+          try {
+            const hangUp = await runEnvironmentSpeech(
+              waitForVoiceCallHangUp(prepared, threadRef.threadId),
+              { signal: watching.signal },
+            );
+            if (hangUp && !isOver()) {
+              // Let a goodbye the voice model is saying finish first.
+              await whenNotSpeaking(GOODBYE_WAIT_MS);
+              end();
+            }
+          } catch {
+            if (isOver()) return;
+            await new Promise((resolve) => setTimeout(resolve, HANG_UP_RETRY_MS));
+          }
+        }
+      })();
+    };
+
     channel.addEventListener("open", () => {
       if (ended) return;
       // Structure changes only: streamed text arrives several times a second and is read when it settles.
@@ -334,6 +382,7 @@ export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
       conversation.threadChanged(snapshot(threadRef));
       useRealtimeVoiceStore.setState({ status: "live" });
       playCallStartSound();
+      watchForHangUp();
     });
     channel.addEventListener("message", (event) => {
       try {

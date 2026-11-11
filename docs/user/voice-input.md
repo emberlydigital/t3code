@@ -166,7 +166,9 @@ microphone from the panel or with `Alt+M` (`Option+M` on Mac), which you can cha
 **Settings → Keybindings**. Requests sent by voice appear folded in the thread; open one to
 read it.
 
-Choose **End voice chat** to hang up. That only ends the call: the agent keeps working, and
+You can also ask to end the call ("hang up", "end this chat"). The agent in the thread
+hangs up for you with a T3 tool, after any goodbye finishes, so it needs an agent that can
+use T3 tools. It ends only the call: the agent keeps working. Or choose **End voice chat** to hang up. That only ends the call: the agent keeps working, and
 you can stop it from the thread as usual. A window holds one call at a time, and the call
 stays with its thread if you open another one.
 

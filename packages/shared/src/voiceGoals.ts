@@ -25,7 +25,7 @@ export function buildVoiceGoalsPrompt(goals: ReadonlyArray<VoiceGoal>, update: V
 Rules:
 - A goal is an outcome the user wants, in at most 8 plain words starting with a verb, such as "Add a dark mode toggle". It is never their words, a greeting, or a transcript.
 - A request that continues, refines or corrects an existing active goal updates that goal instead of adding another.
-- Ignore small talk, filler, and thinking out loud: add nothing for them.
+- Ignore small talk, filler, and thinking out loud: add nothing for them. A request to end or hang up the call is not a goal either.
 - If the work ended "done" and the agent's message shows the goal was met, mark it "done". If the message shows it was only partly met, keep it "active" and reword it to what is left.
 - If the work ended "stopped", mark that goal "dropped". If it "failed", keep it "active".
 - Keep every existing goal's id and order. A new goal gets the next id, "g" plus the next number.

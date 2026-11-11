@@ -29,6 +29,7 @@ export {
   transcribeEnvironmentPcm,
   updateEnvironmentSpeechAcceleration,
   updateVoiceGoals,
+  waitForVoiceCallHangUp,
   updateEnvironmentSpeechModelUnloadTimeout,
 } from "./environment.ts";
 export {

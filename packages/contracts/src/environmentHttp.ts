@@ -66,6 +66,7 @@ import {
   EnvironmentSpeechTranscriptionResult,
   RealtimeVoiceCallRequest,
   RealtimeVoiceSdp,
+  VoiceCallHangUpResult,
   VoiceGoalsRequest,
   VoiceGoalsResult,
 } from "./speech.ts";
@@ -935,6 +936,15 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     })
       .middleware(EnvironmentVoiceBodyLimit)
       .middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    // Held open until an agent asks to hang up the call, or for about 25 seconds.
+    HttpApiEndpoint.get("voiceCallHangUp", "/api/voice/call/hang-up", {
+      headers: OptionalBearerHeaders,
+      query: Schema.Struct({ threadId: ThreadId }),
+      success: VoiceCallHangUpResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
     // Sends the user's spoken requests, and the agent's last message, to the environment's text model.

@@ -8,6 +8,7 @@ import type {
   CloudSpeechProvider,
   SettingsSecretValue,
   RealtimeVoiceName,
+  ThreadId,
   VoiceGoal,
   VoiceGoalUpdate,
   SpeechAcceleration,
@@ -293,6 +294,20 @@ export const postProcessEnvironmentTranscript = (
     run: ({ client, headers }) =>
       client.postProcess({ headers, payload: { transcript, draft, options } }),
   });
+
+/**
+ * Asks the environment whether an agent has asked to hang up this thread's call. The answer
+ * arrives when one does, or after about 25 seconds with false, so callers ask again.
+ */
+export const waitForVoiceCallHangUp = (prepared: PreparedConnection, threadId: ThreadId) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "GET",
+    path: (urls) => urls.voiceCallHangUp({ query: { threadId } }),
+    timeoutMs: 40_000,
+    run: ({ client, headers }) => client.voiceCallHangUp({ headers, query: { threadId } }),
+  }).pipe(Effect.map((answer) => answer.hangUp));
 
 /** Asks the environment's text model to update a call's goal list for one event. */
 export const updateVoiceGoals = (
