@@ -14,12 +14,16 @@ import {
   type SpeechTranscriptionOptions,
 } from "@t3tools/contracts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
-import { REALTIME_VOICE_CALLS_URL, realtimeVoiceSessionJson } from "@t3tools/shared/realtimeVoice";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { CHATGPT_VOICE_CALLS_URL, realtimeVoiceSession } from "@t3tools/shared/realtimeVoice";
 import { cloudSpeechLanguages, effectiveSpeechLanguage } from "@t3tools/shared/speech";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
@@ -39,6 +43,16 @@ const OPENROUTER_CATALOG_URL =
 const isApiKey = Schema.is(CloudSpeechApiKey);
 const isModelId = Schema.is(CloudSpeechModelId);
 const sameCredential = Schema.toEquivalence(SettingsSecretValue);
+// Codex's ChatGPT sign-in. T3 Code reads it and never writes or refreshes it.
+const CodexAuth = Schema.fromJsonString(
+  Schema.Struct({
+    tokens: Schema.Struct({ access_token: Schema.String, account_id: Schema.String }),
+  }),
+);
+const decodeCodexAuth = Schema.decodeUnknownEffect(CodexAuth);
+const decodeJwtClaims = Schema.decodeEffect(
+  Schema.fromJsonString(Schema.Struct({ exp: Schema.Number })),
+);
 const OpenRouterCatalog = Schema.Struct({
   data: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.optionalKey(Schema.String) })),
 });
@@ -119,10 +133,14 @@ export class CloudSpeech extends Context.Service<
       options: SpeechTranscriptionOptions,
       model?: string | undefined,
     ) => Effect.Effect<string, CloudSpeechError | SpeechInvalidAudioError | ServerSettingsError>;
-    /** Answers a WebRTC offer with a live OpenAI voice call. The audio never passes through here. */
+    /**
+     * Answers a WebRTC offer with a live voice call on the ChatGPT account Codex is signed in with
+     * on this machine. The audio never passes through here.
+     */
     readonly realtimeCall: (
       sdp: string,
       voice: RealtimeVoiceName,
+      context?: string,
     ) => Effect.Effect<string, CloudSpeechError | ServerSettingsError>;
   }
 >()("t3/speech/CloudSpeech") {}
@@ -131,6 +149,8 @@ export const layer = Layer.effect(
   CloudSpeech,
   Effect.gen(function* () {
     const settings = yield* ServerSettings.ServerSettingsService;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const resolver = yield* SecretResolver.SecretResolver;
     const http = yield* HttpClient.HttpClient;
     const credentials = settings.getSettings.pipe(
@@ -205,27 +225,45 @@ export const layer = Layer.effect(
             ? "model-unavailable"
             : null;
     const realtimeCall = Effect.fn("CloudSpeech.realtimeCall")(
-      function* (sdp: string, voice: RealtimeVoiceName) {
+      function* (sdp: string, voice: RealtimeVoiceName, context?: string) {
         const provider = "openai";
-        const source = (yield* credentials)[provider];
-        if (!source) return yield* new CloudSpeechError({ provider, reason: "missing-key" });
-        const key = yield* readKey(provider, source);
-        const form = new FormData();
-        form.set("sdp", sdp);
-        form.set("session", realtimeVoiceSessionJson(voice));
-        const unavailable = () =>
-          new CloudSpeechError({ provider, reason: "voice-chat-unavailable" });
+        const fail = (reason: CloudSpeechError["reason"]) =>
+          new CloudSpeechError({ provider, reason });
+        const environment = yield* HostProcess.Environment;
+        const codexHome =
+          environment.CODEX_HOME?.trim() || path.join(yield* HostProcess.HomeDirectory, ".codex");
+        const auth = yield* fileSystem.readFileString(path.join(codexHome, "auth.json")).pipe(
+          Effect.flatMap(decodeCodexAuth),
+          Effect.mapError(() => fail("chatgpt-signin-missing")),
+        );
+        const claims = yield* decodeJwtClaims(
+          Buffer.from(auth.tokens.access_token.split(".")[1] ?? "", "base64url").toString(),
+        ).pipe(Effect.mapError(() => fail("chatgpt-signin-missing")));
+        if (claims.exp * 1000 <= (yield* Clock.currentTimeMillis))
+          return yield* fail("chatgpt-signin-expired");
+        const unavailable = () => fail("voice-chat-unavailable");
         const response = yield* execute(
-          HttpClientRequest.post(REALTIME_VOICE_CALLS_URL).pipe(
-            HttpClientRequest.bearerToken(key),
-            HttpClientRequest.bodyFormData(form),
+          HttpClientRequest.post(CHATGPT_VOICE_CALLS_URL).pipe(
+            HttpClientRequest.bearerToken(Redacted.make(auth.tokens.access_token)),
+            HttpClientRequest.setHeaders({
+              "ChatGPT-Account-ID": auth.tokens.account_id,
+              originator: "codex_cli_rs",
+              "openai-alpha": "quicksilver=v2",
+            }),
+            HttpClientRequest.bodyJsonUnsafe({
+              sdp,
+              session: realtimeVoiceSession(voice, context),
+            }),
           ),
         ).pipe(Effect.mapError(unavailable));
         if (response.status < 200 || response.status >= 300)
-          return yield* new CloudSpeechError({
-            provider,
-            reason: upstreamFailure(provider, response.status) ?? "voice-chat-unavailable",
-          });
+          return yield* fail(
+            response.status === 429
+              ? "rate-limit"
+              : [401, 403].includes(response.status)
+                ? "chatgpt-signin-expired"
+                : "voice-chat-unavailable",
+          );
         return yield* response.text.pipe(Effect.mapError(unavailable));
       },
       (effect) =>

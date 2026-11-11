@@ -3,7 +3,6 @@ import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { deriveThreadStructureRuntime } from "@t3tools/client-runtime/state/thread-execution";
 import {
-  getCloudSpeechKeys,
   RealtimeVoiceConversation,
   startRealtimeVoiceCall,
   type RealtimeVoiceActivity,
@@ -14,7 +13,10 @@ import {
 import {
   AuthOrchestrationOperateScope,
   CloudSpeechError,
+  DEFAULT_REALTIME_VOICE,
+  isRealtimeVoiceName,
   MessageId,
+  type RealtimeVoiceName,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { REALTIME_VOICE_DATA_CHANNEL } from "@t3tools/shared/realtimeVoice";
@@ -33,8 +35,13 @@ import { runEnvironmentSpeech } from "./runEnvironmentSpeech";
 
 /** How many of the thread's newest messages each change re-reads. */
 const RECENT_MESSAGES = 40;
-const CONTEXT_MAX_CHARS = 1500;
-const DISCLOSED_KEY = "t3code:voice-chat-disclosed:v1";
+const CONTEXT_MAX_CHARS = 3000;
+const DISCLOSED_KEY = "t3code:voice-chat-disclosed:v2";
+
+/** A voice saved for an earlier voice list falls back to the default. */
+export function resolveVoiceChatVoice(saved: string): RealtimeVoiceName {
+  return isRealtimeVoiceName(saved) ? saved : DEFAULT_REALTIME_VOICE;
+}
 const FADE_MS = 180;
 const FADE_STEPS = 12;
 const isCloudSpeechError = Schema.is(CloudSpeechError);
@@ -113,10 +120,11 @@ function openingContext(threadRef: ScopedThreadRef) {
   );
   return [
     `This call is about the thread "${projection.thread.title}".`,
-    latest ? `The agent's latest message:\n${latest.text.trim().slice(0, CONTEXT_MAX_CHARS)}` : "",
+    latest ? `Your latest message in it:\n${latest.text.trim().slice(0, CONTEXT_MAX_CHARS)}` : "",
   ]
     .filter(Boolean)
-    .join("\n\n");
+    .join("\n\n")
+    .slice(0, CONTEXT_MAX_CHARS + 500);
 }
 
 /** The call sends audio off this device, so the first one says where it goes. */
@@ -125,7 +133,7 @@ async function disclosed() {
     if (window.localStorage.getItem(DISCLOSED_KEY) !== null) return true;
     const accepted =
       (await requestConfirmDialog(
-        "Voice chat uses OpenAI. Your audio and this thread are sent there during the call.",
+        "Voice chat uses your ChatGPT account. Your audio and this thread are sent to OpenAI during the call.",
       )) ?? false;
     if (accepted) window.localStorage.setItem(DISCLOSED_KEY, "1");
     return accepted;
@@ -143,13 +151,8 @@ function failureMessage(cause: unknown) {
   return "The voice chat could not be started. Try again.";
 }
 
-/**
- * Starts a live voice call about `threadRef`, ending any call already open in this window.
- * Resolves to "missing-key" when the environment has no OpenAI key to call with.
- */
-export async function startRealtimeVoice(
-  threadRef: ScopedThreadRef,
-): Promise<"missing-key" | undefined> {
+/** Starts a live voice call about `threadRef`, ending any call already open in this window. */
+export async function startRealtimeVoice(threadRef: ScopedThreadRef) {
   stopRealtimeVoice();
   const prepared = readPreparedConnection(threadRef.environmentId);
   if (
@@ -159,9 +162,6 @@ export async function startRealtimeVoice(
     toastManager.add({ type: "error", title: "This environment is not available for voice chat." });
     return;
   }
-  // A failed lookup is left for the call itself to report.
-  const keys = await runEnvironmentSpeech(getCloudSpeechKeys(prepared)).catch(() => null);
-  if (keys?.openai === false) return "missing-key";
   if (!(await disclosed())) return;
 
   let ended = false;
@@ -270,15 +270,6 @@ export async function startRealtimeVoice(
         },
         newMessageId,
         dispatch: turn,
-        interrupt: async () => {
-          const result = await runAtomCommand(
-            appAtomRegistry,
-            threadEnvironment.interruptTurn,
-            { environmentId: threadRef.environmentId, input: { threadId: threadRef.threadId } },
-            { label: "voice chat stop" },
-          );
-          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        },
         onCaption: (caption) => {
           if (ended) return;
           useRealtimeVoiceStore.setState(
@@ -297,7 +288,6 @@ export async function startRealtimeVoice(
 
     channel.addEventListener("open", () => {
       if (ended) return;
-      conversation.start(openingContext(threadRef));
       // Structure changes only: streamed text arrives several times a second and is read when it settles.
       own(
         subscribeAtomChanges(environmentThreadDetails.quietThreadAtom(threadRef), () =>
@@ -331,7 +321,12 @@ export async function startRealtimeVoice(
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
     const answer = await runEnvironmentSpeech(
-      startRealtimeVoiceCall(prepared, offer.sdp ?? "", getClientSettings().voiceChatVoice),
+      startRealtimeVoiceCall(
+        prepared,
+        offer.sdp ?? "",
+        resolveVoiceChatVoice(getClientSettings().voiceChatVoice),
+        openingContext(threadRef),
+      ),
     );
     if (ended) return;
     await peer.setRemoteDescription({ type: "answer", sdp: answer });

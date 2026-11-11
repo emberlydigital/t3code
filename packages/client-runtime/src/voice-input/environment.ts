@@ -112,13 +112,15 @@ export const startRealtimeVoiceCall = (
   prepared: PreparedConnection,
   sdp: string,
   voice: RealtimeVoiceName,
+  context: string,
 ) =>
   request({
     group: "voice",
     prepared,
     method: "POST",
     path: (urls) => urls.realtimeCall(),
-    run: ({ client, headers }) => client.realtimeCall({ headers, payload: { sdp, voice } }),
+    run: ({ client, headers }) =>
+      client.realtimeCall({ headers, payload: { sdp, voice, context } }),
   }).pipe(
     Effect.map((answer) => answer.sdp),
     // The environment's reason (a missing or rejected key) is what the user can act on.

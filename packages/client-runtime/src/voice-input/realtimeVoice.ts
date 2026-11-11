@@ -1,16 +1,8 @@
 import {
-  REALTIME_VOICE_BACKEND_PREFIX,
-  REALTIME_VOICE_DELEGATE_TOOL,
-  REALTIME_VOICE_FAILED_OUTPUT,
-  REALTIME_VOICE_FINISHED_OUTPUT,
-  REALTIME_VOICE_INTERRUPTED_OUTPUT,
-  REALTIME_VOICE_INTERRUPT_TOOL,
+  REALTIME_VOICE_FAILED_TEXT,
   REALTIME_VOICE_NEEDS_USER_TEXT,
-  REALTIME_VOICE_NOTHING_RUNNING_OUTPUT,
-  REALTIME_VOICE_SILENT_TOOL,
-  REALTIME_VOICE_STEERED_OUTPUT,
-  REALTIME_VOICE_USER_PREFIX,
-  realtimeVoiceBackendText,
+  REALTIME_VOICE_STEERED_TEXT,
+  realtimeVoiceResultText,
 } from "@t3tools/shared/realtimeVoice";
 
 export interface RealtimeVoiceThreadMessage {
@@ -54,7 +46,6 @@ export interface RealtimeVoiceConversationDependencies {
   readonly newMessageId: () => string;
   /** Sends `prompt` to the thread as the message `messageId`; `steer` when the agent is working. */
   readonly dispatch: (messageId: string, prompt: string, steer: boolean) => Promise<void>;
-  readonly interrupt: () => Promise<void>;
   readonly onCaption?: (caption: RealtimeVoiceCaption) => void;
   /** The call's recent requests, newest last, whenever one is added or changes status. */
   readonly onRequests?: (requests: ReadonlyArray<RealtimeVoiceRequest>) => void;
@@ -62,72 +53,45 @@ export interface RealtimeVoiceConversationDependencies {
   readonly onError?: (message: string) => void;
 }
 
-interface FunctionCall {
-  readonly name: string;
-  readonly callId: string;
-  readonly arguments: string;
-}
-
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
-function functionCalls(response: unknown): ReadonlyArray<FunctionCall> {
-  const output = record(response)?.output;
-  if (!Array.isArray(output)) return [];
-  return output.flatMap((entry) => {
-    const item = record(entry);
-    return item?.type === "function_call" &&
-      typeof item.name === "string" &&
-      typeof item.call_id === "string"
-      ? [
-          {
-            name: item.name,
-            callId: item.call_id,
-            arguments: typeof item.arguments === "string" ? item.arguments : "",
-          },
-        ]
-      : [];
-  });
-}
-
-function delegatedPrompt(json: string) {
-  try {
-    const prompt = record(JSON.parse(json))?.prompt;
-    if (typeof prompt !== "string") return "";
-    const trimmed = prompt.trim();
-    return trimmed.startsWith(REALTIME_VOICE_USER_PREFIX.trim())
-      ? trimmed.slice(REALTIME_VOICE_USER_PREFIX.trim().length).trim()
-      : trimmed;
-  } catch {
-    return "";
-  }
+/** The text parts of a delegation item, which carry the user's request. */
+function delegationText(item: Record<string, unknown>) {
+  const content = item.content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((part) => {
+      const value = record(part);
+      return value?.type === "input_text" && typeof value.text === "string" ? [value.text] : [];
+    })
+    .join(" ")
+    .trim();
 }
 
 /**
- * One live voice call bound to one thread. The voice model speaks with the user; this hands its
- * requests to the thread's agent and tells it what the agent did. It owns no audio and no socket.
+ * One live voice call bound to one thread, on the ChatGPT voice route Codex uses. The voice model
+ * speaks with the user and delegates work; this hands each delegation to the thread's agent and
+ * reports what the agent did back to it. It owns no audio and no socket.
  */
 export class RealtimeVoiceConversation {
   readonly #deps: RealtimeVoiceConversationDependencies;
-  /** Messages already told to the voice model, or older than the call. */
+  /** Messages already reported to the voice model, or older than the call. */
   readonly #known = new Set<string>();
-  /** Messages this call sent, so they are not echoed back as typed text. */
+  /** Messages this call sent, so they are not reported back as typed text. */
   readonly #sent = new Set<string>();
   /** Sent messages the thread has not shown yet. The agent counts as working until it does. */
   readonly #unconfirmed = new Set<string>();
   #threadWorking: boolean;
-  /** The delegate call that returns when the agent goes idle. */
-  #openCall: string | null = null;
-  /** Agent output arrived that the voice model has not been asked to speak about. */
-  #unspoken = false;
   #needsUserAnnounced: boolean;
-  #stopping = false;
-  #responseActive = false;
-  #responseWanted = false;
-  #assistantCaption = "";
-  #userCaption = { itemId: "", text: "" };
+  /** The delegation the current work reports to; its result is spoken when the work ends. */
+  #delegation: string | null = null;
+  /** The agent's latest finished message since the work last ended. */
+  #result: string | null = null;
   #requests: ReadonlyArray<RealtimeVoiceRequest> = [];
+  readonly #captions = { user: "", assistant: "" };
+  readonly #turnRoles = new Map<string, "user" | "assistant">();
 
   constructor(deps: RealtimeVoiceConversationDependencies, thread: RealtimeVoiceThreadSnapshot) {
     this.#deps = deps;
@@ -138,11 +102,6 @@ export class RealtimeVoiceConversation {
 
   get working() {
     return this.#threadWorking || this.#unconfirmed.size > 0;
-  }
-
-  /** Gives the voice model what the thread is about. Call once the data channel is open. */
-  start(context: string) {
-    if (context.trim()) this.#say(`${REALTIME_VOICE_BACKEND_PREFIX}${context.trim()}`);
   }
 
   threadChanged(thread: RealtimeVoiceThreadSnapshot) {
@@ -156,17 +115,16 @@ export class RealtimeVoiceConversation {
       this.#known.add(message.id);
       if (!message.text.trim()) continue;
       if (message.role === "assistant") {
-        this.#say(realtimeVoiceBackendText(message.text));
-        this.#unspoken = true;
+        // Progress stays quiet; the last message before the work ends is spoken as the result.
+        if (this.#result !== null) this.#report(this.#result, "commentary");
+        this.#result = message.text;
       } else {
-        this.#say(`${REALTIME_VOICE_USER_PREFIX}${message.text.trim()}`);
+        this.#context(`The user typed in the app: ${message.text.trim()}`, "commentary");
       }
     }
     this.#threadWorking = thread.working;
-    if (thread.needsUser && !this.#needsUserAnnounced) {
-      this.#say(`${REALTIME_VOICE_BACKEND_PREFIX}${REALTIME_VOICE_NEEDS_USER_TEXT}`);
-      this.#respond();
-    }
+    if (thread.needsUser && !this.#needsUserAnnounced)
+      this.#report(REALTIME_VOICE_NEEDS_USER_TEXT, "speakable");
     this.#needsUserAnnounced = thread.needsUser;
     this.#settle();
   }
@@ -176,104 +134,70 @@ export class RealtimeVoiceConversation {
     const value = record(event);
     if (value === null) return;
     switch (value.type) {
-      case "response.created":
-        this.#responseActive = true;
-        this.#assistantCaption = "";
-        return;
-      case "response.done":
-        this.#responseActive = false;
-        for (const call of functionCalls(value.response)) this.#call(call);
-        if (this.#responseWanted) this.#respond();
-        return;
-      case "input_audio_buffer.speech_started":
-        this.#deps.onActivity?.("listening");
-        this.#deps.onCaption?.({ role: "user", text: "", live: true });
-        return;
-      case "input_audio_buffer.speech_stopped":
-        this.#deps.onActivity?.("idle");
-        return;
-      case "output_audio_buffer.started":
-        this.#deps.onActivity?.("speaking");
-        return;
-      case "output_audio_buffer.stopped":
-      case "output_audio_buffer.cleared":
-        this.#deps.onActivity?.("idle");
-        return;
-      case "conversation.item.input_audio_transcription.delta": {
-        if (typeof value.delta !== "string") return;
-        const itemId = typeof value.item_id === "string" ? value.item_id : "";
-        this.#userCaption =
-          this.#userCaption.itemId === itemId
-            ? { itemId, text: this.#userCaption.text + value.delta }
-            : { itemId, text: value.delta };
-        this.#deps.onCaption?.({ role: "user", text: this.#userCaption.text, live: true });
+      case "delegation.created": {
+        const item = record(value.item);
+        if (item === null || typeof item.id !== "string") return;
+        if (item.target !== undefined && item.target !== "client") return;
+        this.#delegate(item.id, delegationText(item));
         return;
       }
-      case "conversation.item.input_audio_transcription.completed":
-        if (typeof value.transcript === "string" && value.transcript.trim())
-          this.#deps.onCaption?.({ role: "user", text: value.transcript.trim(), live: false });
+      case "turn.created": {
+        const turn = record(value.turn);
+        const role = turn?.role;
+        if ((role !== "user" && role !== "assistant") || typeof turn?.id !== "string") return;
+        this.#turnRoles.set(turn.id, role);
+        this.#captions[role] = typeof turn.transcript === "string" ? turn.transcript : "";
+        this.#deps.onActivity?.(role === "user" ? "listening" : "speaking");
+        if (this.#captions[role].trim())
+          this.#deps.onCaption?.({ role, text: this.#captions[role].trim(), live: true });
         return;
-      case "response.output_audio_transcript.delta":
-        if (typeof value.delta !== "string") return;
-        this.#assistantCaption += value.delta;
-        this.#deps.onCaption?.({ role: "assistant", text: this.#assistantCaption, live: true });
+      }
+      case "turn.delta": {
+        const role =
+          typeof value.turn_id === "string" ? this.#turnRoles.get(value.turn_id) : undefined;
+        if (role === undefined || typeof value.delta !== "string") return;
+        this.#captions[role] += value.delta;
+        this.#deps.onCaption?.({ role, text: this.#captions[role].trim(), live: true });
         return;
-      case "response.output_audio_transcript.done":
-        if (typeof value.transcript === "string" && value.transcript.trim())
-          this.#deps.onCaption?.({
-            role: "assistant",
-            text: value.transcript.trim(),
-            live: false,
-          });
+      }
+      case "turn.done": {
+        const turn = record(value.turn);
+        const role = turn?.role;
+        if (role !== "user" && role !== "assistant") return;
+        const text = typeof turn?.transcript === "string" ? turn.transcript.trim() : "";
+        if (typeof turn?.id === "string") this.#turnRoles.delete(turn.id);
+        if (text) this.#deps.onCaption?.({ role, text, live: false });
+        this.#deps.onActivity?.("idle");
         return;
+      }
       case "error": {
-        const error = record(value.error);
-        if (error?.code === "conversation_already_has_active_response") {
-          this.#responseActive = true;
-          this.#responseWanted = true;
-          return;
-        }
-        if (typeof error?.message === "string") this.#deps.onError?.(error.message);
+        const message = record(value.error)?.message;
+        if (typeof message === "string") this.#deps.onError?.(message);
         return;
       }
     }
   }
 
-  #call(call: FunctionCall) {
-    switch (call.name) {
-      case REALTIME_VOICE_DELEGATE_TOOL:
-        return this.#delegate(call);
-      case REALTIME_VOICE_INTERRUPT_TOOL:
-        return this.#interrupt(call);
-      case REALTIME_VOICE_SILENT_TOOL:
-        return this.#output(call.callId, "");
-      default:
-        this.#output(call.callId, "Unknown tool.");
-        this.#respond();
-    }
-  }
-
-  #delegate(call: FunctionCall) {
-    const prompt = delegatedPrompt(call.arguments);
+  #delegate(itemId: string, prompt: string) {
     if (!prompt) {
-      this.#output(call.callId, REALTIME_VOICE_FAILED_OUTPUT);
-      this.#respond();
+      this.#append(itemId, REALTIME_VOICE_FAILED_TEXT, "speakable");
       return;
     }
     const steer = this.working;
     const messageId = this.#deps.newMessageId();
     this.#sent.add(messageId);
     this.#unconfirmed.add(messageId);
-    if (!steer) this.#openCall = call.callId;
+    if (!steer) {
+      this.#delegation = itemId;
+      this.#result = null;
+    }
     this.#setRequests([
       ...this.#requests.slice(1 - MAX_REQUESTS),
       { id: messageId, prompt, status: "working" },
     ]);
     this.#deps.dispatch(messageId, prompt, steer).then(
       () => {
-        if (!steer) return;
-        this.#output(call.callId, REALTIME_VOICE_STEERED_OUTPUT);
-        this.#respond();
+        if (steer) this.#append(itemId, REALTIME_VOICE_STEERED_TEXT, "commentary");
       },
       () => {
         this.#unconfirmed.delete(messageId);
@@ -282,87 +206,53 @@ export class RealtimeVoiceConversation {
             request.id === messageId ? { ...request, status: "failed" } : request,
           ),
         );
-        if (this.#openCall === call.callId) this.#openCall = null;
-        this.#output(call.callId, REALTIME_VOICE_FAILED_OUTPUT);
-        this.#respond();
+        if (this.#delegation === itemId) this.#delegation = null;
+        this.#append(itemId, REALTIME_VOICE_FAILED_TEXT, "speakable");
         this.#settle();
       },
     );
   }
 
-  #interrupt(call: FunctionCall) {
-    if (!this.working) {
-      this.#output(call.callId, REALTIME_VOICE_NOTHING_RUNNING_OUTPUT);
-      this.#respond();
-      return;
-    }
-    this.#stopping = true;
-    this.#deps.interrupt().then(
-      () => {
-        this.#output(call.callId, REALTIME_VOICE_INTERRUPTED_OUTPUT);
-        this.#respond();
-      },
-      () => {
-        this.#stopping = false;
-        this.#output(call.callId, REALTIME_VOICE_FAILED_OUTPUT);
-        this.#respond();
-      },
-    );
-  }
-
-  /** Once the agent is idle, returns the open call and has the result spoken. */
+  /** Once the agent is idle, marks the requests done and has the result spoken. */
   #settle() {
     if (this.working) return;
-    const stopped = this.#stopping;
-    this.#stopping = false;
     if (this.#requests.some((request) => request.status === "working"))
       this.#setRequests(
         this.#requests.map((request) =>
-          request.status === "working"
-            ? { ...request, status: stopped ? "stopped" : "done" }
-            : request,
+          request.status === "working" ? { ...request, status: "done" } : request,
         ),
       );
-    if (this.#openCall !== null) {
-      this.#output(
-        this.#openCall,
-        stopped ? REALTIME_VOICE_INTERRUPTED_OUTPUT : REALTIME_VOICE_FINISHED_OUTPUT,
-      );
-      this.#openCall = null;
-      if (!stopped) this.#respond();
-    } else if (this.#unspoken && !stopped) {
-      this.#respond();
-    }
-    this.#unspoken = false;
+    if (this.#result !== null) this.#report(this.#result, "speakable");
+    this.#result = null;
+    this.#delegation = null;
+  }
+
+  /** Reports work output to the delegation it answers, or to the call when nothing asked. */
+  #report(text: string, channel: "commentary" | "speakable") {
+    const body = realtimeVoiceResultText(text);
+    if (this.#delegation !== null) this.#append(this.#delegation, body, channel);
+    else this.#context(body, channel);
+  }
+
+  #append(delegationItemId: string, text: string, channel: "commentary" | "speakable") {
+    this.#deps.send({
+      type: "delegation.context.append",
+      delegation_item_id: delegationItemId,
+      channel,
+      content: [{ type: "input_text", text }],
+    });
+  }
+
+  #context(text: string, channel: "commentary" | "speakable") {
+    this.#deps.send({
+      type: "session.context.append",
+      channel,
+      content: [{ type: "input_text", text }],
+    });
   }
 
   #setRequests(requests: ReadonlyArray<RealtimeVoiceRequest>) {
     this.#requests = requests;
     this.#deps.onRequests?.(requests);
-  }
-
-  #say(text: string) {
-    this.#deps.send({
-      type: "conversation.item.create",
-      item: { type: "message", role: "user", content: [{ type: "input_text", text }] },
-    });
-  }
-
-  #output(callId: string, output: string) {
-    this.#deps.send({
-      type: "conversation.item.create",
-      item: { type: "function_call_output", call_id: callId, output },
-    });
-  }
-
-  /** Only one response may run at a time, so a request made during one waits for it to end. */
-  #respond() {
-    if (this.#responseActive) {
-      this.#responseWanted = true;
-      return;
-    }
-    this.#responseWanted = false;
-    this.#responseActive = true;
-    this.#deps.send({ type: "response.create" });
   }
 }

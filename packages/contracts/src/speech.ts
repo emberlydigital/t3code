@@ -53,6 +53,8 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
       "model-unavailable",
       "unavailable",
       "voice-chat-unavailable",
+      "chatgpt-signin-missing",
+      "chatgpt-signin-expired",
     ]),
   },
   { httpApiStatus: 422 },
@@ -76,6 +78,10 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
         return `${name} couldn’t transcribe this recording. Try again later.`;
       case "voice-chat-unavailable":
         return `${name} couldn’t start the voice chat. Try again later.`;
+      case "chatgpt-signin-missing":
+        return "Voice chat uses your ChatGPT account. Sign in to Codex with ChatGPT on this machine, then try again.";
+      case "chatgpt-signin-expired":
+        return "Your ChatGPT sign-in has expired. Open Codex once to refresh it, then try again.";
     }
   }
 }
@@ -275,26 +281,28 @@ const RealtimeVoiceSdpText = Schema.String.check(
 /** A WebRTC session description. The audio itself flows between the client and OpenAI. */
 export const RealtimeVoiceSdp = Schema.Struct({ sdp: RealtimeVoiceSdpText });
 
-/** The voices OpenAI's realtime model speaks with. */
+/** The voices Codex offers on the ChatGPT voice route. */
 export const RealtimeVoiceName = Schema.Literals([
-  "marin",
-  "cedar",
-  "alloy",
-  "ash",
-  "ballad",
-  "coral",
-  "echo",
-  "sage",
-  "shimmer",
-  "verse",
+  "sol",
+  "cove",
+  "juniper",
+  "maple",
+  "spruce",
+  "ember",
+  "vale",
+  "breeze",
+  "arbor",
 ]);
 export type RealtimeVoiceName = typeof RealtimeVoiceName.Type;
-export const DEFAULT_REALTIME_VOICE: RealtimeVoiceName = "marin";
+export const DEFAULT_REALTIME_VOICE: RealtimeVoiceName = "sol";
+export const isRealtimeVoiceName = Schema.is(RealtimeVoiceName);
 
 export const RealtimeVoiceCallRequest = Schema.Struct({
   sdp: RealtimeVoiceSdpText,
   /** Older clients omit it and get the default voice. */
   voice: Schema.optionalKey(RealtimeVoiceName),
+  /** What the thread is about, so the call starts informed instead of asking. */
+  context: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4000))),
 });
 
 export const EnvironmentSpeechAccelerationRequest = Schema.Struct({

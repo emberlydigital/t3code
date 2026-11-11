@@ -528,16 +528,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "voice-chat-key",
-    title: "Voice chat OpenAI key",
+    id: "voice-chat-account",
+    title: "Voice chat ChatGPT account",
     to: "/settings/voice",
-    searchTerms: ["realtime live talk conversation openai api key secret gpt"],
+    searchTerms: ["realtime live talk conversation chatgpt codex sign in account openai"],
   },
   {
     id: "voice-chat-voice",
     title: "Voice chat voice",
     to: "/settings/voice",
-    searchTerms: ["realtime live talk speaker sound marin cedar alloy"],
+    searchTerms: ["realtime live talk speaker sound sol cove juniper maple"],
   },
   {
     id: "voice-microphone",

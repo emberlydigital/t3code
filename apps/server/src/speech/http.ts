@@ -132,7 +132,11 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
         Effect.fn("environment.voice.realtimeCall")(function* (args) {
           yield* guard(args.endpoint.name);
           const sdp = yield* cloud
-            .realtimeCall(args.payload.sdp, args.payload.voice ?? DEFAULT_REALTIME_VOICE)
+            .realtimeCall(
+              args.payload.sdp,
+              args.payload.voice ?? DEFAULT_REALTIME_VOICE,
+              args.payload.context,
+            )
             .pipe(
               Effect.catchTags({
                 ServerSettingsError: (error) => failEnvironmentInternal("internal_error", error),

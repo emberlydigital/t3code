@@ -149,12 +149,13 @@ finishes you hear a short summary while the full output stays in the thread. You
 keep talking while the agent works to steer it, or ask it to stop. Messages you type
 during the call still go to the agent, and you hear their results too.
 
-Voice chat needs an OpenAI API key saved on the thread's environment, and OpenAI bills
-that key for the call. If none is saved, starting a call asks for one. Add, replace, or remove it under
-**Settings → Voice → Voice chat**, where you can also choose the voice. Saving it does
-not change how dictation transcribes. While the call is open,
-your microphone audio and what the agent writes in that thread go to OpenAI. Audio
-travels from this device straight to OpenAI; the key never leaves the environment.
+Voice chat runs on your ChatGPT account. The machine running the thread needs Codex
+signed in with ChatGPT; T3 Code uses that sign-in and counts the call against your
+ChatGPT plan's voice allowance, not API billing. If the sign-in has expired, open Codex
+once to refresh it. Choose the voice under **Settings → Voice → Voice chat**. While the
+call is open, your microphone audio and what the agent writes in that thread go to
+OpenAI. Audio travels from this device straight to OpenAI. This uses the same
+undocumented route as Codex's own voice mode, so it can stop working if OpenAI changes it.
 While a call is open, a floating panel shows what was heard, what was said back, what you
 asked for by voice, and the agent's subagents and steps. Drag it by its top edge. Mute the
 microphone from the panel or with `Alt+M` (`Option+M` on Mac), which you can change under

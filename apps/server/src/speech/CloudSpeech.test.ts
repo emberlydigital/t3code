@@ -1,6 +1,10 @@
 import { it } from "@effect/vitest";
 import { DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, SecretProviderId } from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -24,6 +28,7 @@ it.effect.each(["openai", "xai"] as const)("sends only to %s using its own saved
       Effect.provide(
         CloudSpeech.layer.pipe(
           Layer.provide(FetchHttpClient.layer),
+          Layer.provide(NodeServices.layer),
           Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
           Layer.provide(
             Layer.mock(SecretResolver.SecretResolver)({
@@ -107,6 +112,7 @@ it.effect("uploads to OpenRouter only for a listed exact model, as zero-retentio
       Effect.provide(
         CloudSpeech.layer.pipe(
           Layer.provide(FetchHttpClient.layer),
+          Layer.provide(NodeServices.layer),
           Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
           Layer.provide(Layer.mock(SecretResolver.SecretResolver)({})),
         ),
@@ -165,6 +171,7 @@ it.effect("removing a key while a catalog read is pending prevents the upload", 
       Effect.provide(
         CloudSpeech.layer.pipe(
           Layer.provide(FetchHttpClient.layer),
+          Layer.provide(NodeServices.layer),
           Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
           Layer.provide(Layer.mock(SecretResolver.SecretResolver)({})),
         ),
@@ -199,13 +206,28 @@ it.effect("removing a key while a catalog read is pending prevents the upload", 
   }),
 );
 
-it.effect("answers a voice call offer with the saved OpenAI key and the server's own session", () =>
+it.effect("starts a voice call on the ChatGPT account Codex is signed in with", () =>
   Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fileSystem.makeTempDirectoryScoped();
+    const codexHome = path.join(home, ".codex");
+    // The test clock starts at the epoch, so `exp` is seconds after it.
+    const signIn = Effect.fnUntraced(function* (exp: number) {
+      const token = `h.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.s`;
+      yield* fileSystem.makeDirectory(codexHome, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(codexHome, "auth.json"),
+        JSON.stringify({ tokens: { access_token: token, account_id: "acct-1" } }),
+      );
+      return token;
+    });
     const upstream = vi.fn<typeof fetch>(async () => new Response("answer-sdp", { status: 201 }));
     const service = yield* CloudSpeech.CloudSpeech.pipe(
       Effect.provide(
         CloudSpeech.layer.pipe(
           Layer.provide(FetchHttpClient.layer),
+          Layer.provide(NodeServices.layer),
           Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
           Layer.provide(Layer.mock(SecretResolver.SecretResolver)({})),
         ),
@@ -213,28 +235,41 @@ it.effect("answers a voice call offer with the saved OpenAI key and the server's
     );
     const call = () =>
       service
-        .realtimeCall("offer-sdp", "cedar")
-        .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
-    yield* service.setKey("xai", Redacted.make("other"));
-    expect(yield* Effect.flip(call())).toMatchObject({ provider: "openai", reason: "missing-key" });
+        .realtimeCall("offer-sdp", "sol", "About the login bug.")
+        .pipe(
+          Effect.provideService(FetchHttpClient.Fetch, upstream),
+          Effect.provideService(HostProcess.HomeDirectory, home),
+          Effect.provideService(HostProcess.Environment, {}),
+        );
+    expect(yield* Effect.flip(call())).toMatchObject({ reason: "chatgpt-signin-missing" });
+    yield* signIn(0);
+    expect(yield* Effect.flip(call())).toMatchObject({ reason: "chatgpt-signin-expired" });
     expect(upstream).not.toHaveBeenCalled();
-    yield* service.setKey("openai", Redacted.make("chosen"));
+    const token = yield* signIn(3600);
     expect(yield* call()).toBe("answer-sdp");
     const [url, init] = upstream.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.openai.com/v1/realtime/calls");
+    expect(String(url)).toBe(
+      "https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas",
+    );
     expect(init?.redirect).toBe("error");
-    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer chosen");
-    const form = init?.body as FormData;
-    expect(form.get("sdp")).toBe("offer-sdp");
-    const session = JSON.parse(String(form.get("session"))) as {
-      tools: ReadonlyArray<{ name: string }>;
-      audio: { output: { voice: string } };
+    const headers = new Headers(init?.headers);
+    expect(headers.get("authorization")).toBe(`Bearer ${token}`);
+    expect(headers.get("chatgpt-account-id")).toBe("acct-1");
+    const body = JSON.parse(yield* Effect.promise(() => new Response(init?.body).text())) as {
+      sdp: string;
+      session: {
+        instructions: string;
+        audio: { output: { voice: string } };
+        delegation: { type: string };
+      };
     };
-    expect(session.audio.output.voice).toBe("cedar");
-    expect(session.tools.map((tool) => tool.name)).toContain("background_agent");
-    upstream.mockResolvedValueOnce(new Response("sensitive upstream diagnostic", { status: 401 }));
-    expect(yield* Effect.flip(call())).toMatchObject({ reason: "rejected-key" });
+    expect(body.sdp).toBe("offer-sdp");
+    expect(body.session.audio.output.voice).toBe("sol");
+    expect(body.session.delegation.type).toBe("client");
+    expect(body.session.instructions).toContain("About the login bug.");
+    upstream.mockResolvedValueOnce(new Response("signed out", { status: 401 }));
+    expect(yield* Effect.flip(call())).toMatchObject({ reason: "chatgpt-signin-expired" });
     upstream.mockResolvedValueOnce(new Response(null, { status: 500 }));
     expect(yield* Effect.flip(call())).toMatchObject({ reason: "voice-chat-unavailable" });
-  }),
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
